@@ -15,6 +15,9 @@ plap moves model-harness behavior into the server:
 - [Threads](docs/threads.md) let several models work with separate histories.
 - Client tool calls and private plugin [state](docs/state.md) can continue across requests.
 
+Together, these capabilities let plap run multi-model workflows behind an OpenAI-compatible API without flattening every
+model's context into one transcript. Those workflows can survive client round trips too, as this review does:
+
 <img src="docs/assets/response-lifecycle.svg" alt="A main model calls a server tool and produces a draft. An advisor plugin holds the draft, asks the client to run a tool, saves both threads across the request boundary, resumes review when the result returns, and gives advice to the main model before the final answer." width="100%">
 
 ## Start plap
