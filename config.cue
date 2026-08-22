@@ -127,7 +127,7 @@ config: #Config & {
         model_info: created: 1783268995
         model_info: input_modalities: ["text", "image"]
         main: #FieldConfig & {
-          model: *"openrouter/xiaomi/mimo-v2.5:xiaomi,openrouter/xiaomi/mimo-v2.5:digitalocean" | string
+          model: *"crof/deepseek-v4-flash-0731,openrouter/deepseek/deepseek-v4-flash-0731:streamlake,openrouter/deepseek/deepseek-v4-flash-0731:baidu,openrouter/deepseek/deepseek-v4-flash-0731:gmicloud" | string
           max_completion_tokens: *131072 | int
           reasoning_effort: *"high" | #ReasoningEffort
         }
@@ -137,7 +137,7 @@ config: #Config & {
           reasoning_effort: *"low" | #ReasoningEffort
         }
         advisor: #FieldConfig & {
-          model: *"openrouter/deepseek/deepseek-v4-flash:deepseek,openrouter/deepseek/deepseek-v4-flash:baidu,openrouter/deepseek/deepseek-v4-flash:gmicloud,openrouter/deepseek/deepseek-v4-flash:novita" | string
+          model: *"crof/deepseek-v4-flash-0731,openrouter/deepseek/deepseek-v4-flash-0731:streamlake,openrouter/deepseek/deepseek-v4-flash-0731:baidu,openrouter/deepseek/deepseek-v4-flash-0731:gmicloud" | string
           max_completion_tokens: *131072 | int
           reasoning_effort: *"high" | #ReasoningEffort
         }
@@ -160,25 +160,25 @@ config: #Config & {
             "low": {
               main: reasoning_effort: "low"
               vision: reasoning_effort: "none"
-              advisor: reasoning_effort: "high"
+              advisor: reasoning_effort: "low"
             }
             "medium": {
-              main: reasoning_effort: "medium"
+              main: reasoning_effort: "high"
               vision: reasoning_effort: "medium"
               advisor: reasoning_effort: "high"
             }
             "high": {
-              main: reasoning_effort: "high"
+              main: reasoning_effort: "max"
               vision: reasoning_effort: "medium"
               advisor: reasoning_effort: "max"
             }
             "xhigh": {
-              main: reasoning_effort: "high"
+              main: reasoning_effort: "max"
               vision: reasoning_effort: "medium"
               advisor: reasoning_effort: "max"
             }
             "max": {
-              main: reasoning_effort: "high"
+              main: reasoning_effort: "max"
               vision: reasoning_effort: "medium"
               advisor: reasoning_effort: "max"
             }
