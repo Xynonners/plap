@@ -28,6 +28,7 @@ from plap.responses.contracts.events import (
     ResponseTextEventLogprobTopLogprob,
 )
 from plap.responses.contracts.items import (
+    FunctionCallCallerDirect,
     FunctionCallOutputContentPart,
     InputFileContent,
     InputImageContent,
@@ -111,6 +112,7 @@ __all__ = [
     "CompactedResponseObject",
     "ContextManagementCompaction",
     "ConversationReference",
+    "FunctionCallCallerDirect",
     "FunctionCallOutputContentPart",
     "FunctionTool",
     "InputFileContent",

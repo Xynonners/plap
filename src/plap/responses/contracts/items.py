@@ -148,9 +148,15 @@ class RequestItemReference(StrictModel):
     type: Literal["item_reference"] = Field(description="Input item discriminator.")
 
 
+# Program callers require the separate program/program_output continuation lifecycle.
+class FunctionCallCallerDirect(StrictModel):
+    type: Literal["direct"] = Field(description="Direct function-call execution context.")
+
+
 class _FunctionCallItemBase(StrictModel):
     arguments: str = Field(description="JSON string of arguments emitted by the model.")
     call_id: str = Field(description="Stable call ID paired with function output.")
+    caller: FunctionCallCallerDirect | None = Field(default=None, description="Supported direct execution context for this call.")
     name: str = Field(description="Function name chosen by the model.")
     namespace: str | None = Field(default=None, description="Optional function namespace.")
     status: ItemStatus | None = Field(
@@ -166,6 +172,7 @@ class RequestFunctionCallItem(_FunctionCallItemBase):
 
 class _FunctionCallOutputItemBase(StrictModel):
     call_id: str = Field(description="Call ID this output satisfies.")
+    caller: FunctionCallCallerDirect | None = Field(default=None, description="Supported direct execution context for this output.")
     output: str | list[FunctionCallOutputContentPart] = Field(description="Function result as a string or supported content blocks.")
     type: Literal["function_call_output"] = Field(description="Item discriminator.")
 

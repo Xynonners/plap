@@ -7,7 +7,16 @@ import pytest
 
 from plap.auth import AuthContext
 from plap.errors import PlapError
-from plap.responses.contracts import RequestInputItem, RequestItemReference, ResponseCreateRequest
+from plap.responses.contracts import (
+    FunctionCallCallerDirect,
+    RequestFunctionCallItem,
+    RequestFunctionCallOutputItem,
+    RequestInputItem,
+    RequestItemReference,
+    ResponseCreateRequest,
+    ResponseFunctionCallItem,
+    ResponseFunctionCallOutputItem,
+)
 from plap.responses.store import ResponseStore
 
 
@@ -73,6 +82,36 @@ async def test_prepare_request_keeps_canonical_input_and_resolves_execution_hist
     assert isinstance(prepared.execution_request.input, list)
     assert [item.id for item in prepared.execution_request.input] == ["msg_prior", "msg_current"]
     assert [item.type for item in prepared.execution_request.input] == ["message", "message"]
+
+
+def test_stored_function_items_preserve_direct_callers() -> None:
+    caller = FunctionCallCallerDirect(type="direct")
+    items: list[RequestInputItem] = [
+        RequestFunctionCallItem(
+            arguments="{}",
+            call_id="call_1",
+            caller=caller,
+            name="bash",
+            status="completed",
+            type="function_call",
+        ),
+        RequestFunctionCallOutputItem(
+            call_id="call_1",
+            caller=caller,
+            output="ok",
+            status="completed",
+            type="function_call_output",
+        ),
+    ]
+
+    payloads = ResponseStore._stored_input_payloads("resp_1", items)
+    restored = [ResponseStore._input_items_page_item_from_payload(payload) for payload in payloads]
+
+    restored_call, restored_output = restored
+    assert isinstance(restored_call, ResponseFunctionCallItem)
+    assert isinstance(restored_output, ResponseFunctionCallOutputItem)
+    assert restored_call.caller == caller
+    assert restored_output.caller == caller
 
 
 @pytest.mark.parametrize("status", ["completed", "incomplete", "failed", "cancelled"])

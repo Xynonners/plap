@@ -1,6 +1,7 @@
+import pytest
 from pydantic import ValidationError
 
-from plap.responses.contracts import ResponseCreateRequest
+from plap.responses.contracts import RequestFunctionCallItem, RequestFunctionCallOutputItem, ResponseCreateRequest
 
 
 def test_conversation_id_accepts_string_and_object_wire_forms() -> None:
@@ -39,6 +40,50 @@ def test_accepts_easy_input_message_shorthand() -> None:
     assert request.input[0].type == "message"
     assert request.input[0].role == "user"
     assert request.input[0].content == "hello"
+
+
+@pytest.mark.parametrize("caller", [None, {"type": "direct"}])
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"arguments": "{}", "call_id": "call_1", "name": "bash", "type": "function_call"},
+        {"call_id": "call_1", "output": "ok", "type": "function_call_output"},
+    ],
+)
+def test_accepts_supported_function_item_callers(caller: object, item: dict[str, object]) -> None:
+    request = ResponseCreateRequest.model_validate(
+        {
+            "input": [{**item, "caller": caller}],
+            "model": "gpt-4.1",
+        }
+    )
+
+    assert isinstance(request.input, list)
+    parsed_item = request.input[0]
+    assert isinstance(parsed_item, RequestFunctionCallItem | RequestFunctionCallOutputItem)
+    parsed_caller = parsed_item.caller
+    if caller is None:
+        assert parsed_caller is None
+    else:
+        assert parsed_caller is not None
+        assert parsed_caller.type == "direct"
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"arguments": "{}", "call_id": "call_1", "name": "bash", "type": "function_call"},
+        {"call_id": "call_1", "output": "ok", "type": "function_call_output"},
+    ],
+)
+def test_rejects_program_function_item_callers(item: dict[str, object]) -> None:
+    with pytest.raises(ValidationError, match="direct"):
+        ResponseCreateRequest.model_validate(
+            {
+                "input": [{**item, "caller": {"type": "program", "caller_id": "call_program_1"}}],
+                "model": "gpt-4.1",
+            }
+        )
 
 
 def test_rejects_typeless_input_item_without_message_role_shape() -> None:
