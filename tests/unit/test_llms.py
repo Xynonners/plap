@@ -274,6 +274,35 @@ def _chunk(
     }
 
 
+def _terminal_chunk(
+    *,
+    model: str = "model-a",
+    provider: str = "gateway",
+    finish_reason: str = "stop",
+    content: str = "",
+    usage: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": "chatcmpl_1",
+        "model": model,
+        "created": 10,
+        "object": "chat.completion.chunk",
+        "provider": provider,
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": finish_reason,
+                "native_finish_reason": finish_reason,
+                "delta": {
+                    "content": content,
+                    "role": "assistant",
+                },
+            }
+        ],
+        "usage": usage,
+    }
+
+
 class _AsyncListStream:
     def __init__(self, items: list[Any]) -> None:
         self._items = list(items)
@@ -2625,6 +2654,28 @@ async def test_rate_limit_quirk_blocks_n_plus_1_stream_within_window(monkeypatch
     assert len(provider.stream_calls) == 1
 
 
+@pytest.mark.parametrize(
+    "second_terminal",
+    [
+        pytest.param(_terminal_chunk(finish_reason="length", usage={}), id="conflicting-reason"),
+        pytest.param(_terminal_chunk(content="late output", usage={}), id="late-output"),
+        pytest.param(_terminal_chunk(), id="missing-usage"),
+    ],
+)
+async def test_deduplicate_terminal_usage_quirk_preserves_invalid_terminal_replays(
+    second_terminal: dict[str, Any],
+) -> None:
+    provider = _StaticProvider(
+        quirks=(quirks_module.DeduplicateTerminalUsage(),),
+        models={"model-a": ()},
+        stream_raw=[_terminal_chunk(), second_terminal],
+    )
+    client = ChatCompletionClient(provider)
+
+    with pytest.raises(ChatCompletionError, match="more than one finish_reason"):
+        _ = [delta async for delta in client.stream(_simple_request())]
+
+
 def test_gmicloud_request_quirks_map_max_tokens_and_disable_thinking_for_none_effort() -> None:
     request = replace(_request_for_model("XiaomiMiMo/MiMo-V2.5-Pro"), reasoning_effort="none")
 
@@ -3083,6 +3134,40 @@ async def test_openrouter_client_aliases_reasoning_on_complete_and_stream() -> N
     assert result.message.reasoning_content == "because"
     assert deltas[0].reasoning_delta == "because"
     assert deltas[1].finish_reason == "stop"
+
+
+async def test_openrouter_client_normalizes_repeated_terminal_usage_chunk() -> None:
+    usage = {
+        "prompt_tokens": 3,
+        "completion_tokens": 5,
+        "total_tokens": 8,
+        "prompt_tokens_details": {"cached_tokens": 2},
+        "completion_tokens_details": {"reasoning_tokens": 1},
+    }
+    fake_client = _FakeOpenAIClient(
+        [
+            _AsyncListStream(
+                [
+                    _terminal_chunk(model="xiaomi/mimo-v2.5", provider="Xiaomi"),
+                    _terminal_chunk(model="xiaomi/mimo-v2.5", provider="Xiaomi", usage=usage),
+                ]
+            )
+        ],
+        base_url=OPENROUTER_OPENAI_BASE_URL,
+    )
+    client = ChatCompletionClient(_openrouter_provider(client=fake_client))
+
+    deltas = [delta async for delta in client.stream(_request_for_model("xiaomi/mimo-v2.5"))]
+
+    assert len(deltas) == 1
+    assert deltas[0].finish_reason == "stop"
+    assert deltas[0].usage == ChatUsage(
+        input_tokens=3,
+        output_tokens=5,
+        total_tokens=8,
+        cached_tokens=2,
+        reasoning_tokens=1,
+    )
 
 
 async def test_groq_client_aliases_reasoning_on_complete_and_stream() -> None:

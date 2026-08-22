@@ -49,6 +49,65 @@ def _response_delta(raw: dict[str, Any]) -> dict[str, Any] | None:
     return delta if isinstance(delta, dict) else None
 
 
+def _single_terminal_choice(raw: dict[str, Any]) -> dict[str, Any] | None:
+    choices = raw.get("choices")
+    if not isinstance(choices, list) or len(choices) != 1:
+        return None
+    choice = choices[0]
+    if not isinstance(choice, dict) or choice.get("finish_reason") is None:
+        return None
+    return choice
+
+
+def _terminal_identity(raw: dict[str, Any], choice: dict[str, Any]) -> tuple[object, ...] | None:
+    response_id = raw.get("id")
+    model = raw.get("model")
+    created = raw.get("created")
+    index = choice.get("index")
+    if (
+        not isinstance(response_id, str)
+        or not response_id
+        or not isinstance(model, str)
+        or not model
+        or created is None
+        or not isinstance(index, int)
+    ):
+        return None
+    return (
+        response_id,
+        model,
+        created,
+        raw.get("object"),
+        raw.get("provider"),
+        index,
+        choice.get("finish_reason"),
+        choice.get("native_finish_reason"),
+    )
+
+
+def _empty_stream_value(value: object) -> bool:
+    return value in (None, "", [], {})
+
+
+def _empty_terminal_delta(choice: dict[str, Any]) -> bool:
+    delta = choice.get("delta")
+    if not isinstance(delta, dict):
+        return False
+    for name, value in delta.items():
+        if name == "role":
+            if value not in (None, "assistant"):
+                return False
+            continue
+        if not _empty_stream_value(value):
+            return False
+    for name, value in choice.items():
+        if name in {"delta", "finish_reason", "index", "native_finish_reason"}:
+            continue
+        if not _empty_stream_value(value):
+            return False
+    return True
+
+
 def _nested_mapping_get(value: dict[str, Any] | None, path: tuple[str, ...]) -> Any:
     current: Any = value
     for segment in path:
@@ -350,6 +409,33 @@ class ForceNamedToolChoice(Quirk):
         )
 
 
+class DeduplicateTerminalUsage(Quirk):
+    async def stream(self, call: Call, next_complete, next_stream):
+        terminal_identity: tuple[object, ...] | None = None
+        terminal_had_usage = False
+        normalized_usage_terminal = False
+
+        async for raw in next_stream(None):
+            choice = _single_terminal_choice(raw)
+            identity = None if choice is None else _terminal_identity(raw, choice)
+            if identity is not None and terminal_identity is None:
+                terminal_identity = identity
+                terminal_had_usage = raw.get("usage") is not None
+            elif (
+                identity is not None
+                and identity == terminal_identity
+                and not terminal_had_usage
+                and not normalized_usage_terminal
+                and isinstance(raw.get("usage"), dict)
+                and raw.get("error") is None
+                and _empty_terminal_delta(choice)
+            ):
+                normalized_usage_terminal = True
+                yield {**raw, "choices": []}
+                continue
+            yield raw
+
+
 class MoveOutput(Quirk):
     def __init__(self, old: str, new: str) -> None:
         self._old = old
@@ -444,6 +530,7 @@ class RateLimit(Quirk):
 
 
 __all__ = [
+    "DeduplicateTerminalUsage",
     "Drop",
     "DropIf",
     "DropMessageField",
