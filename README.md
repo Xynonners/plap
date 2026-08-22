@@ -1,13 +1,27 @@
-# plap
+<div align="center">
+  <h1>plap</h1>
+  <p><strong>An extensible OpenAI-compatible model harness</strong></p>
+  <p>Responses and Chat Completions through one plugin-driven model loop.</p>
+  <p>
+    <a href="docs/README.md">Documentation</a> ·
+    <a href="docs/first-plugin.md">Write a plugin</a> ·
+    <a href="LICENSE">Apache 2.0</a>
+  </p>
+</div>
 
-plap is a highly extensible OpenAI-compatible server for the Responses and Chat Completions APIs, built around plugins.
+plap moves model-harness behavior into the server:
 
-It accepts normal requests from either API, runs them through a highly configurable model loop, and lets Python plugins add
-new capabilities or modify response execution through [hooks](docs/hooks.md).
+- Python plugins can add tools and modify response execution through [hooks](docs/hooks.md).
+- [Threads](docs/threads.md) let several models work with separate histories.
+- Client tool calls and private plugin [state](docs/state.md) can continue across requests.
 
-Harness engineering has never been done on the server side before. Want to build a company brain, context compression,
-or an advisor model plugin? plap makes it possible with features such as [a threading system](docs/threads.md): letting multiple models
-work on the same response with isolated contexts and access to the client's tools.
+```mermaid
+flowchart LR
+    R[Responses API] --> L[plap model loop]
+    C[Chat Completions API] --> L
+    P[Python plugins] <--> L
+    L --> M[Model providers]
+```
 
 ## Start plap
 
@@ -42,12 +56,15 @@ source .dev/.env
 
 ## Send a response
 
-The OpenAI Python client is already installed in the Pixi environment:
-
-### Responses
+The OpenAI Python client is already installed in the Pixi environment. Start a Python session:
 
 ```sh
-pixi run python - <<'PY'
+pixi run python
+```
+
+Point the client at plap:
+
+```python
 import os
 
 from openai import OpenAI
@@ -56,36 +73,28 @@ client = OpenAI(
     base_url=os.environ["PLAP_DEV_BASE_URL"],
     api_key=os.environ["PLAP_DEV_API_KEY"],
 )
+```
 
+### Responses
+
+```python
 response = client.responses.create(
     model=os.environ["PLAP_DEV_MODEL"],
     input="Say hello in one sentence.",
 )
 
 print(response.output_text)
-PY
 ```
 
 ### Chat Completions
 
-```sh
-pixi run python - <<'PY'
-import os
-
-from openai import OpenAI
-
-client = OpenAI(
-    base_url=os.environ["PLAP_DEV_BASE_URL"],
-    api_key=os.environ["PLAP_DEV_API_KEY"],
-)
-
+```python
 completion = client.chat.completions.create(
     model=os.environ["PLAP_DEV_MODEL"],
     messages=[{"role": "user", "content": "Say hello in one sentence."}],
 )
 
 print(completion.choices[0].message.content)
-PY
 ```
 
 You now have a working local plap server. To carry model and plugin state into later requests, continue with
