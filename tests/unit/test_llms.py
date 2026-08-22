@@ -2764,6 +2764,26 @@ def test_crof_request_quirks_map_max_tokens_for_flash_model() -> None:
     assert "extra_body" not in body
 
 
+@pytest.mark.parametrize("model", ["deepseek-v4-flash-0731", "deepseek-v4-pro-0813"])
+def test_crof_supports_deepseek_ga_models_with_existing_response_format_limits(model: str) -> None:
+    request = _request_for_model(model)
+
+    with pytest.raises(ChatCompletionUnsupportedRequestError, match="when type is 'json_schema'"):
+        _body_for(_crof_provider(), request, stream=False)
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["deepseek/deepseek-v4-flash-0731", "deepseek/deepseek-v4-pro-0813"],
+)
+def test_openrouter_supports_deepseek_ga_models(model: str) -> None:
+    request = replace(_request_for_model(model), response_format=None)
+
+    body = _body_for(_openrouter_provider(), request, stream=False)
+
+    assert body["model"] == model
+
+
 def test_openrouter_lookup_keeps_special_suffix_and_routes_provider_order() -> None:
     body = _body_for(
         _openrouter_provider(),

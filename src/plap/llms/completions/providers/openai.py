@@ -428,7 +428,9 @@ GMICLOUD_MODELS: dict[str, tuple[Quirk, ...]] = {
 }
 CROF_MODELS: dict[str, tuple[Quirk, ...]] = {
     "deepseek-v4-flash": (RejectResponseFormat("json_schema"),),
+    "deepseek-v4-flash-0731": (RejectResponseFormat("json_schema"),),
     "deepseek-v4-pro": (RejectResponseFormat("json_schema"),),
+    "deepseek-v4-pro-0813": (RejectResponseFormat("json_schema"),),
     "deepseek-v3.2": (RejectResponseFormat(),),
     "gemma-4-31b-it": (RejectResponseFormat(),),
     "greg": (RejectResponseFormat("json_object"),),

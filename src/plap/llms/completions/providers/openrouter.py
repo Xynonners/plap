@@ -60,9 +60,13 @@ OPENROUTER_REASONING_ENABLE_QUIRKS: tuple[Quirk, ...] = (
     ExtraBodyIf("reasoning_effort", ("none",), {"reasoning": {"enabled": False}}),
     ExtraBodyIf("reasoning_effort", (None, "none"), {"reasoning": {"enabled": True}}, negate=True),
 )
+
+
 OPENROUTER_MODELS: dict[str, tuple[Quirk, ...]] = {
     "deepseek/deepseek-v4-flash": (),
+    "deepseek/deepseek-v4-flash-0731": (),
     "deepseek/deepseek-v4-pro": (),
+    "deepseek/deepseek-v4-pro-0813": (),
     "google/gemma-4-31b-it": OPENROUTER_REASONING_ENABLE_QUIRKS,
     "meta-llama/llama-3.1-8b-instruct": (),
     "meta-llama/llama-3.3-70b-instruct": (),
