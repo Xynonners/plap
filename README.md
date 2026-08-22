@@ -15,13 +15,7 @@ plap moves model-harness behavior into the server:
 - [Threads](docs/threads.md) let several models work with separate histories.
 - Client tool calls and private plugin [state](docs/state.md) can continue across requests.
 
-```mermaid
-flowchart LR
-    R[Responses API] --> L[plap model loop]
-    C[Chat Completions API] --> L
-    P[Python plugins] <--> L
-    L --> M[Model providers]
-```
+<img src="docs/assets/response-lifecycle.svg" alt="A main model calls a server tool and produces a draft. An advisor plugin holds the draft, asks the client to run a tool, saves both threads across the request boundary, resumes review when the result returns, and gives advice to the main model before the final answer." width="100%">
 
 ## Start plap
 
