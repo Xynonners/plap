@@ -7,13 +7,12 @@ from uuid import UUID, uuid4
 import anyio
 import docker
 import pytest
-from alembic import command
-from alembic.config import Config
 from docker.errors import ImageNotFound
 from sqlalchemy import text
 from testcontainers.postgres import PostgresContainer
 
 from plap.auth import APIKeyManager, IssuedAPIKey, normalize_email
+from plap.migrations import upgrade
 from plap.persistence import create_database_engine, create_session_maker
 from plap.persistence.models import Organization, OrganizationMembership, SSOProvider, User, UserEmail, UserIdentity
 
@@ -50,9 +49,7 @@ async def _reset_database_schema(database_url: str) -> None:
 
 
 def _run_migrations(database_url: str) -> None:
-    config = Config(toml_file="pyproject.toml")
-    config.set_main_option("sqlalchemy.url", database_url)
-    command.upgrade(config, "head")
+    upgrade(database_url)
 
 
 @dataclass(slots=True)

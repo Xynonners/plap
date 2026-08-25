@@ -27,7 +27,8 @@ from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 import plap.llms.accumulator as accumulator_module
-from plap.app import _import_plugin, _plugin_names, _plugins
+from plap import plugins
+from plap.app import _import_plugin
 from plap.bus import bus
 from plap.config import CueBox, load
 from plap.llms.accumulator import Accumulator
@@ -1160,10 +1161,8 @@ def _load_config():
     async def _collect(paths: tuple[str, ...]) -> tuple[str, ...]:
         return paths
 
-    for name in _plugin_names():
-        entry = _plugins().get(name)
-        if entry is not None:
-            _import_plugin(entry)
+    for entrypoint in plugins.resolve():
+        _import_plugin(entrypoint)
 
     paths = anyio.run(partial(_collect, paths=()))
     _CONFIG_CACHE = load(*paths)

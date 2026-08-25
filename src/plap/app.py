@@ -3,10 +3,8 @@ from __future__ import annotations
 import asyncio
 import importlib
 import sys
-import tomllib
 from functools import partial
-from importlib.metadata import EntryPoint, entry_points
-from pathlib import Path
+from importlib.metadata import EntryPoint
 from typing import Any
 
 import anyio
@@ -21,6 +19,7 @@ from litestar.di import Provide
 from litestar.exceptions import HTTPException, NotAuthorizedException, ValidationException
 from litestar.types import ASGIApp, Receive, Scope, Send
 
+from plap import plugins
 from plap.auth import APIKeyManager
 from plap.auth.dependencies import auth_middleware, provide_request_auth_context
 from plap.bus import bus
@@ -33,8 +32,6 @@ from plap.responses.store import ResponseStore
 from plap.telemetry import build_telemetry, emit_access_log, request_context_middleware, shutdown_telemetry
 
 logger = structlog.stdlib.get_logger(__name__)
-_ROOT = Path(__file__).resolve().parents[2]
-_PLUGIN_MANIFEST = _ROOT / "plugins.toml"
 
 
 def _error_body(
@@ -164,15 +161,6 @@ def handle_unexpected_exception(request: Request[Any, Any, Any], exc: Exception)
     )
 
 
-def _plugins() -> dict[str, EntryPoint]:
-    discovered: dict[str, EntryPoint] = {}
-    for entrypoint in entry_points().select(group="plap.plugin"):
-        if entrypoint.name in discovered:
-            raise RuntimeError(f"duplicate plugin entrypoint: {entrypoint.name!r}")
-        discovered[entrypoint.name] = entrypoint
-    return discovered
-
-
 def _import_plugin(entrypoint: EntryPoint) -> object:
     module_name = entrypoint.module
     if module_name in sys.modules:
@@ -180,26 +168,6 @@ def _import_plugin(entrypoint: EntryPoint) -> object:
         for name in stale:
             sys.modules.pop(name, None)
     return importlib.import_module(module_name)
-
-
-def _plugin_names() -> list[str]:
-    if not _PLUGIN_MANIFEST.is_file():
-        raise RuntimeError(f"missing plugin manifest: {_PLUGIN_MANIFEST}")
-    with _PLUGIN_MANIFEST.open("rb") as file:
-        data = tomllib.load(file)
-    raw = data.get("plugins")
-    if not isinstance(raw, list) or not raw:
-        raise RuntimeError("plugins.toml must define a non-empty 'plugins' array")
-    plugin_names: list[str] = []
-    for value in raw:
-        if not isinstance(value, str) or not value:
-            raise RuntimeError("plugins.toml plugins entries must be non-empty strings")
-        if value in plugin_names:
-            raise RuntimeError(f"duplicate plugin in manifest: {value!r}")
-        plugin_names.append(value)
-    if "core" not in plugin_names:
-        raise RuntimeError("plugins.toml must include 'core'")
-    return plugin_names
 
 
 def _sealing_keys(config: CueBox) -> list[str]:
@@ -260,11 +228,7 @@ def _run_sync(fn, /, **kwargs):
 
 
 def create_app() -> Litestar:
-    discovered = _plugins()
-    plugin_names = _plugin_names()
-    for name in plugin_names:
-        if name not in discovered:
-            raise RuntimeError(f"plugin manifest requested unknown plugin: {name!r}")
+    selected_plugins = plugins.resolve()
 
     bus.reset()
 
@@ -286,8 +250,7 @@ def create_app() -> Litestar:
         _ = loaded
         return hooks
 
-    for name in plugin_names:
-        entrypoint = discovered[name]
+    for entrypoint in selected_plugins:
         _import_plugin(entrypoint)
 
     config_paths = _run_sync(bootstrap_config, paths=())
@@ -303,7 +266,7 @@ def create_app() -> Litestar:
         "app.startup",
         foreign_log_level=config.foreign_log_level,
         log_level=config.log_level,
-        plugins=plugin_names,
+        plugins=[entrypoint.name for entrypoint in selected_plugins],
     )
 
     database = Database(config.database_url)

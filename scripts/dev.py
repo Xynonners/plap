@@ -22,19 +22,19 @@ from pathlib import Path
 
 import anyio
 import docker
-from alembic import command
-from alembic.config import Config
 from docker.errors import DockerException, ImageNotFound
 from sqlalchemy import select
 from testcontainers.core.container import DockerContainer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-from plap.app import _import_plugin, _plugin_names, _plugins  # noqa: E402
+from plap import plugins  # noqa: E402
+from plap.app import _import_plugin  # noqa: E402
 from plap.auth import API_KEY_PREFIX, APIKeyManager, normalize_email  # noqa: E402
 from plap.bus import bus  # noqa: E402
 from plap.config import CueBox, load  # noqa: E402
 from plap.llms.completions.providers import PROVIDER_BUILDERS  # noqa: E402
+from plap.migrations import upgrade as upgrade_database  # noqa: E402
 from plap.persistence.db import create_database_engine, create_session_maker  # noqa: E402
 from plap.persistence.models import APIKey, Organization, OrganizationMembership, User, UserEmail  # noqa: E402
 
@@ -321,19 +321,14 @@ def _require_provider_keys(config: CueBox, *, model: str) -> None:
 
 
 def _load_dev_config() -> CueBox:
-    discovered = _plugins()
-    plugin_names = _plugin_names()
-
     bus.reset()
 
     @bus.emit("bootstrap.config")
     async def collect_config(paths: tuple[str, ...]) -> tuple[str, ...]:
         return paths
 
-    for name in plugin_names:
-        if name not in discovered:
-            raise SystemExit(f"plugin manifest requested unknown plugin: {name!r}")
-        _import_plugin(discovered[name])
+    for entrypoint in plugins.resolve():
+        _import_plugin(entrypoint)
 
     config_paths = anyio.run(partial(collect_config, paths=()))
     loaded = load(*config_paths)
@@ -659,9 +654,7 @@ def _resolve_dev_model(config: CueBox) -> str:
 
 
 def _run_migrations(database_url: str) -> None:
-    config = Config(toml_file="pyproject.toml")
-    config.set_main_option("sqlalchemy.url", database_url)
-    command.upgrade(config, "head")
+    upgrade_database(database_url)
 
 
 def _write_state_file(path: Path, values: dict[str, str]) -> None:

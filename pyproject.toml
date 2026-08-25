@@ -126,6 +126,6 @@ default = ["dev"]
 [tool.pixi.tasks]
 setup = "pre-commit install --install-hooks"
 dev = "python scripts/dev.py"
-db-current = "alembic -c pyproject.toml current"
-db-history = "alembic -c pyproject.toml history"
-db-upgrade = "alembic -c pyproject.toml upgrade head"
+db-current = "python -m plap.migrations current"
+db-history = "python -m plap.migrations history"
+db-upgrade = "python -m plap.migrations upgrade"

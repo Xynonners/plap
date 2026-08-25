@@ -21,7 +21,8 @@ import anyio
 import structlog
 from datasets import load_dataset
 
-from plap.app import _import_plugin, _plugin_names, _plugins
+from plap import plugins
+from plap.app import _import_plugin
 from plap.bus import bus
 from plap.config import CueBox, load
 from plap.llms.accumulator import Accumulator
@@ -647,11 +648,8 @@ def _load_config() -> CueBox:
     async def collect(paths: tuple[str, ...]) -> tuple[str, ...]:
         return paths
 
-    discovered = _plugins()
-    for name in _plugin_names():
-        entry = discovered.get(name)
-        if entry is not None:
-            _import_plugin(entry)
+    for entrypoint in plugins.resolve():
+        _import_plugin(entrypoint)
 
     paths = anyio.run(partial(collect, paths=()))
     _CONFIG_CACHE = load(*paths)

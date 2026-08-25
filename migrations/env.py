@@ -17,7 +17,9 @@ config = context.config
 if config.config_file_name is not None and Path(config.config_file_name).is_file():
     fileConfig(config.config_file_name)
 
-target_metadata = Base.metadata
+target_metadata = config.attributes.get("target_metadata", Base.metadata)
+version_table = config.get_main_option("version_table", "alembic_version")
+version_table_schema = config.get_main_option("version_table_schema", "public")
 
 
 def get_database_url() -> str:
@@ -40,6 +42,8 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        version_table=version_table,
+        version_table_schema=version_table_schema,
     )
 
     with context.begin_transaction():
@@ -51,6 +55,8 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
+        version_table=version_table,
+        version_table_schema=version_table_schema,
     )
 
     with context.begin_transaction():
