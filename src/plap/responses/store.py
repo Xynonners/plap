@@ -22,7 +22,6 @@ from plap.responses.contracts import (
     InputItemsPageItem,
     RequestInputItem,
     RequestItemReference,
-    RequestMessageItem,
     RequestReasoningItem,
     ResponseCreateRequest,
     ResponseObject,
@@ -224,7 +223,7 @@ class ResponseStore:
         if conversation_id is not None and request.store is False:
             raise _conversation_requires_store_error()
 
-        current_input_items = self._current_input_items(request)
+        current_input_items = list(request.input_items)
         stored_input_items = self._stored_current_input_items(current_input_items)
         parent_response_id = request.previous_response_id
         replay_items: list[RequestInputItem] = []
@@ -666,14 +665,6 @@ class ResponseStore:
     @staticmethod
     def _scope_id(auth_context: AuthContext) -> UUID:
         return auth_context.organization_id or auth_context.user_id
-
-    @staticmethod
-    def _current_input_items(request: ResponseCreateRequest) -> list[RequestInputItem]:
-        if request.input is None:
-            return []
-        if isinstance(request.input, str):
-            return [RequestMessageItem(content=request.input, role="user", type="message")]
-        return list(request.input)
 
     @staticmethod
     def _is_implicit_reasoning_replay(item: RequestInputItem) -> bool:

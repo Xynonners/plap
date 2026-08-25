@@ -37,7 +37,6 @@ from plap.responses.ingest.ingest import (
     _DecodedSealedFunctionCall,
     _DecodedSealedFunctionCallOutput,
     _last_compaction_index,
-    _normalize_input_items,
     _slice_to_last_compaction,
 )
 from plap.responses.ingest.ingest import (
@@ -266,9 +265,9 @@ def _parallel_active_calls() -> tuple[ReasoningPayload, str, str]:
 
 
 def test_normalize_input_items_wraps_string_as_user_message() -> None:
-    result = _normalize_input_items(ResponseCreateRequest(model="plap/test", input="hello"))
+    result = ResponseCreateRequest(model="plap/test", input="hello").input_items
 
-    assert result == [RequestMessageItem(content="hello", role="user", type="message")]
+    assert result == (RequestMessageItem(content="hello", role="user", type="message"),)
 
 
 def test_last_compaction_index_returns_none_without_compaction() -> None:

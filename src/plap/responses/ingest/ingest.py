@@ -43,14 +43,6 @@ from plap.responses.ingest.sealing import open_call_id, open_compaction_payload,
 INTERRUPTED_TOOL_OUTPUT = "Tool call aborted by user."
 
 
-def _normalize_input_items(request: ResponseCreateRequest) -> list[RequestInputItem]:
-    if request.input is None:
-        return []
-    if isinstance(request.input, str):
-        return [RequestMessageItem(content=request.input, role="user", type="message")]
-    return list(request.input)
-
-
 def _last_compaction_index(items: list[RequestInputItem]) -> int | None:
     last_index: int | None = None
     for index, item in enumerate(items):
@@ -571,7 +563,7 @@ async def ingest_response_request(
     keyring: SealingKeyring,
     thread_codes: dict[str, int],
 ) -> Ingested:
-    input_items = _normalize_input_items(request)
+    input_items = list(request.input_items)
     replay_items = _slice_to_last_compaction(input_items)
     decoded_items = _decode_queue(replay_items, keyring=keyring, thread_codes=thread_codes)
     return _replay_decoded_queue(decoded_items, allowed_threads=set(thread_codes))

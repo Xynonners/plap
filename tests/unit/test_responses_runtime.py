@@ -26,8 +26,8 @@ from plap.llms.completions.chat import (
     ChatUsage,
 )
 from plap.llms.retry import RETRY_TOOL_PLACEHOLDER
-from plap.plugins.core.loop import response_request
-from plap.responses.contracts import ResponseCreateRequest, ResponseStreamEvent
+from plap.plugins.core.loop import response_finish, response_request
+from plap.responses.contracts import ResponseCreateRequest, ResponseStatus, ResponseStreamEvent
 from plap.responses.contracts.items import ResponseFunctionCallItem, ResponseMessageItem, ResponseReasoningItem
 from plap.responses.ingest.models import (
     CompactedMainTail,
@@ -538,6 +538,74 @@ async def test_terminal_persistence_failure_does_not_resave_committed_state(monk
     assert len(response.output) == 1
 
 
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        ("completed", "commit"),
+        ("incomplete", "commit"),
+        ("failed", "progress"),
+        ("cancelled", "progress"),
+    ],
+)
+async def test_response_finish_selects_terminal_state_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+    status: ResponseStatus,
+    expected: str,
+) -> None:
+    calls: list[str] = []
+
+    async def commit(self: State) -> None:
+        _ = self
+        calls.append("commit")
+
+    async def save_progress(self: State) -> None:
+        _ = self
+        calls.append("progress")
+
+    monkeypatch.setattr(State, "commit", commit)
+    monkeypatch.setattr(State, "save_progress", save_progress)
+
+    await response_finish(state=_state(), status=status)
+
+    assert calls == [expected]
+
+
+async def test_response_finish_listener_failure_prevents_terminal_transition() -> None:
+    bus.reset()
+    core = importlib.reload(importlib.import_module("plap.plugins.core.loop"))
+
+    @bus.listen("response.finish")
+    async def fail_after_state_persistence(state, status, *, next):
+        await next(state=state, status=status)
+        raise RuntimeError("continuity indexing failed")
+
+    channels = _RecordingChannels()
+    store = _RecordingStore()
+    state = _state(
+        store,
+        channels,
+        client=_StubChatClient(
+            [
+                _delta(
+                    content_delta="answer",
+                    finish_reason=ChatFinishReason.STOP,
+                    usage=_usage(input_tokens=3, output_tokens=1),
+                )
+            ]
+        ),
+    )
+
+    try:
+        with pytest.raises(ResponseFinalizationError, match="response finalization failed"):
+            await _run(state)
+    finally:
+        bus.reset()
+        importlib.reload(core)
+
+    assert store.finish_calls == 0
+    assert _state_coordinator(state).current_response().status == "in_progress"
+
+
 async def test_response_hooks_follow_the_documented_execution_order() -> None:
     bus.reset()
     core = importlib.reload(importlib.import_module("plap.plugins.core.loop"))
@@ -588,11 +656,14 @@ async def test_response_hooks_follow_the_documented_execution_order() -> None:
         events.append("loop.after")
         return result
 
-    @bus.listen("response.commit")
-    async def wrap_commit(state, *, next):
-        events.append("commit.before")
-        await next(state=state)
-        events.append("commit.after")
+    @bus.listen("response.finish")
+    async def wrap_finish(state, status, *, next):
+        coordinator = state.svcs.get(StreamCoordinator)
+        events.append(f"finish.before:{status}")
+        assert coordinator.current_response().status == "in_progress"
+        await next(state=state, status=status)
+        assert coordinator.current_response().status == "in_progress"
+        events.append(f"finish.after:{status}")
 
     state = _state(
         _RecordingStore(),
@@ -628,8 +699,8 @@ async def test_response_hooks_follow_the_documented_execution_order() -> None:
         "completion.after",
         "turn.after",
         "loop.after",
-        "commit.before",
-        "commit.after",
+        "finish.before:completed",
+        "finish.after:completed",
     ]
 
 

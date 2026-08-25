@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from uuid import uuid4
 
+import anyio
 import pytest
 import svcs
 
@@ -52,11 +53,13 @@ class _RecordingStore:
     def __init__(self, prepared: PreparedRequest) -> None:
         self._prepared = prepared
         self.prepare_calls = 0
+        self.prepared_request: ResponseCreateRequest | None = None
         self.begin_calls = 0
 
     async def prepare_request(self, auth_context: AuthContext, request: ResponseCreateRequest) -> PreparedRequest:
-        _ = auth_context, request
+        _ = auth_context
         self.prepare_calls += 1
+        self.prepared_request = request
         return self._prepared
 
     async def begin_response(self, prepared: PreparedRequest, response) -> None:
@@ -68,6 +71,17 @@ class _RecordingStore:
 
     async def replace_output_item(self, prepared: PreparedRequest, response_id: str, output_index: int, item: object) -> None:
         _ = prepared, response_id, output_index, item
+
+
+@pytest.fixture(autouse=True)
+def _response_input_bus(monkeypatch: pytest.MonkeyPatch) -> None:
+    event_bus = EventBus()
+
+    @event_bus.emit("response.input")
+    async def response_input(items):
+        return items
+
+    monkeypatch.setattr("plap.responses.routes.bus", event_bus)
 
 
 def _auth_context() -> AuthContext:
@@ -226,6 +240,76 @@ async def test_prepare_create_prepares_and_stops_before_created() -> None:
     assert state.svcs.get(StreamCoordinator).current_response().model == request.model
 
 
+async def test_prepare_create_runs_response_input_before_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    event_bus = EventBus()
+    request = _request()
+    auth_context = _auth_context()
+    added = RequestMessageItem(content="restored", role="user", type="message")
+
+    @event_bus.emit("response.input")
+    async def response_input(items, request, auth_context, svcs):
+        _ = request, auth_context, svcs
+        return items
+
+    @event_bus.listen("response.input")
+    async def restore(items, request: ResponseCreateRequest, auth_context: AuthContext, svcs, *, next):
+        assert request is request_context
+        assert auth_context is auth_context_value
+        assert svcs is container
+        return await next(items=(*items, added))
+
+    request_context = request
+    auth_context_value = auth_context
+    store = _RecordingStore(_prepared(request))
+    registry = svcs.Registry()
+    registry.register_value(CueBox, _config())
+    registry.register_value(SealingKeyring, _keyring())
+    registry.register_value(ResponseStore, store)
+    container = svcs.Container(registry)
+    monkeypatch.setattr("plap.responses.routes.bus", event_bus)
+
+    await _prepare_create(
+        svcs=container,
+        auth_context=auth_context,
+        request=request,
+        channels=_RecordingChannels(),
+    )
+
+    assert store.prepared_request is not None
+    assert store.prepared_request.input == [*request.input_items, added]
+
+
+async def test_response_input_failure_stops_before_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    event_bus = EventBus()
+
+    @event_bus.emit("response.input")
+    async def response_input(items):
+        return items
+
+    @event_bus.listen("response.input")
+    async def fail(*, next):
+        _ = next
+        raise RuntimeError("input restoration failed")
+
+    store = _RecordingStore(_prepared())
+    registry = svcs.Registry()
+    registry.register_value(CueBox, _config())
+    registry.register_value(SealingKeyring, _keyring())
+    registry.register_value(ResponseStore, store)
+    container = svcs.Container(registry)
+    monkeypatch.setattr("plap.responses.routes.bus", event_bus)
+
+    with pytest.raises(RuntimeError, match="input restoration failed"):
+        await _prepare_create(
+            svcs=container,
+            auth_context=_auth_context(),
+            request=_request(),
+            channels=_RecordingChannels(),
+        )
+
+    assert store.prepare_calls == 0
+
+
 async def test_prepare_create_preserves_stored_user_boundary_and_resets_lineage() -> None:
     keyring = _keyring()
     stored = ReasoningPayload(
@@ -344,10 +428,16 @@ async def test_prepare_create_echoes_inbound_compaction_anchor_into_reasoning() 
 
 async def test_response_start_return_without_terminalization_fails_response(monkeypatch: pytest.MonkeyPatch) -> None:
     bus = EventBus()
+    finish_statuses: list[str] = []
 
     @bus.emit("response.start")
     async def _body(state: State) -> None:
         _ = state
+
+    @bus.emit("response.finish")
+    async def _finish(state: State, status: str) -> None:
+        finish_statuses.append(status)
+        await state.save_progress()
 
     monkeypatch.setattr("plap.responses.routes.bus", bus)
     state = _state()
@@ -359,6 +449,7 @@ async def test_response_start_return_without_terminalization_fails_response(monk
     assert response.status == "failed"
     assert response.error is not None
     assert response.error.code == "server_error"
+    assert finish_statuses == ["failed"]
 
 
 async def test_response_start_error_after_terminalization_preserves_response(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -390,6 +481,11 @@ async def test_safe_progress_failure_does_not_fabricate_failed_response(monkeypa
         _ = state
         raise RuntimeError("execution failed")
 
+    @bus.emit("response.finish")
+    async def _finish(state: State, status: str) -> None:
+        assert status == "failed"
+        await state.save_progress()
+
     async def _fail_save_progress(self: State) -> None:
         raise RuntimeError("progress persistence failed")
 
@@ -402,6 +498,38 @@ async def test_safe_progress_failure_does_not_fabricate_failed_response(monkeypa
         await _execute_response(state)
 
     assert state.svcs.get(StreamCoordinator).current_response().status == "in_progress"
+
+
+async def test_cancellation_runs_response_finish_before_terminalization(monkeypatch: pytest.MonkeyPatch) -> None:
+    event_bus = EventBus()
+    started = anyio.Event()
+    observations: list[tuple[str, str]] = []
+
+    @event_bus.emit("response.start")
+    async def _block(state: State) -> None:
+        _ = state
+        started.set()
+        await anyio.sleep_forever()
+
+    @event_bus.emit("response.finish")
+    async def _finish(state: State, status: str) -> None:
+        observations.append((status, state.svcs.get(StreamCoordinator).current_response().status))
+        await state.save_progress()
+
+    monkeypatch.setattr("plap.responses.routes.bus", event_bus)
+    state = _state()
+    await _accept_response(state)
+
+    async def execute() -> None:
+        await _execute_response(state)
+
+    async with anyio.create_task_group() as task_group:
+        task_group.start_soon(execute)
+        await started.wait()
+        task_group.cancel_scope.cancel()
+
+    assert observations == [("cancelled", "in_progress")]
+    assert state.svcs.get(StreamCoordinator).current_response().status == "cancelled"
 
 
 async def test_config_failure_raises_during_preparation() -> None:

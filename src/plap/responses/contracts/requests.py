@@ -10,7 +10,7 @@ from plap.responses.contracts.base import (
     _reject_unsupported_type_variants,
     _validate_metadata,
 )
-from plap.responses.contracts.items import InputTextContent, RequestInputItem
+from plap.responses.contracts.items import InputTextContent, RequestInputItem, RequestMessageItem
 from plap.responses.contracts.tools import (
     SUPPORTED_TOOL_TYPES,
     ResponseIncludable,
@@ -255,6 +255,14 @@ class ResponseCreateRequest(StrictModel):
     @classmethod
     def validate_metadata(cls, value: Metadata | None) -> Metadata | None:
         return _validate_metadata(value)
+
+    @property
+    def input_items(self) -> tuple[RequestInputItem, ...]:
+        if self.input is None:
+            return ()
+        if isinstance(self.input, str):
+            return (RequestMessageItem(content=self.input, role="user", type="message"),)
+        return tuple(self.input)
 
     @property
     def conversation_id(self) -> str | None:

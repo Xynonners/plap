@@ -1,7 +1,7 @@
 """Execute a response as a loop of main-agent turns.
 
 One response runs one loop. Each loop iteration builds one request and runs one
-turn. A turn wraps one retried main-model completion. Commit runs once after the
+turn. A turn wraps one retried main-model completion. Finish runs once after the
 loop has stopped.
 """
 
@@ -12,7 +12,9 @@ from typing import NoReturn
 import anyio
 import structlog
 from opentelemetry import trace
+from svcs import Container
 
+from plap.auth import AuthContext
 from plap.bus import bus
 from plap.llms.accumulator import Snapshot
 from plap.llms.completions.budget import BudgetedChatCompletionClient, CompletionBudget, CompletionBudgetExhaustedError
@@ -20,7 +22,14 @@ from plap.llms.completions.chat import ChatCompletionRequest, ChatCompletionResu
 from plap.llms.retry import RetryValidator, retry_on_tool_choice_mismatch, retry_on_unusable_tool_calls
 from plap.llms.retry import stream as retry_stream
 from plap.plugins.core.request import build_response_request
-from plap.responses.contracts import ResponseUsage, ResponseUsageInputTokensDetails, ResponseUsageOutputTokensDetails
+from plap.responses.contracts import (
+    RequestInputItem,
+    ResponseCreateRequest,
+    ResponseStatus,
+    ResponseUsage,
+    ResponseUsageInputTokensDetails,
+    ResponseUsageOutputTokensDetails,
+)
 from plap.responses.state import State
 from plap.responses.streaming import ResponseFinalizationError, StreamCoordinator
 from plap.responses.summary import SummaryDelta, SummaryDone
@@ -29,6 +38,17 @@ logger = structlog.stdlib.get_logger(__name__)
 tracer = trace.get_tracer(__name__)
 
 SUMMARY_HARD_FLUSH_CHARS = 800
+
+
+@bus.emit("response.input")
+async def response_input(
+    items: tuple[RequestInputItem, ...],
+    request: ResponseCreateRequest,
+    auth_context: AuthContext,
+    svcs: Container,
+) -> tuple[RequestInputItem, ...]:
+    _ = request, auth_context, svcs
+    return items
 
 
 def _raise_task_error(exc: BaseExceptionGroup) -> NoReturn:
@@ -140,9 +160,14 @@ async def response_loop(state: State) -> ChatCompletionResult | None:
             return result
 
 
-@bus.emit("response.commit")
-async def response_commit(state: State) -> None:
-    await state.commit()
+@bus.emit("response.finish")
+async def response_finish(state: State, status: ResponseStatus) -> None:
+    if status in {"completed", "incomplete"}:
+        await state.commit()
+    elif status in {"failed", "cancelled"}:
+        await state.save_progress()
+    else:
+        raise ValueError(f"non-terminal response status: {status}")
 
 
 def _response_usage(usage: ChatUsage | None) -> ResponseUsage | None:
@@ -182,12 +207,13 @@ async def run_response(state: State) -> None:
                         output_usage=None if result is None or budget_exhausted else result.usage,
                     )
                 )
-                await response_commit(state=state)
-                if budget_exhausted:
-                    await coordinator.incomplete(usage=usage)
-                elif result is None:
-                    await coordinator.completed(usage=usage)
-                elif result.finish_reason == ChatFinishReason.LENGTH:
+                status: ResponseStatus = (
+                    "incomplete"
+                    if budget_exhausted or (result is not None and result.finish_reason == ChatFinishReason.LENGTH)
+                    else "completed"
+                )
+                await response_finish(state=state, status=status)
+                if status == "incomplete":
                     await coordinator.incomplete(usage=usage)
                 else:
                     await coordinator.completed(usage=usage)

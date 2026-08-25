@@ -10,6 +10,7 @@ starts. Underneath, the [event bus](bus.md) implements each hook as a core handl
 The response hooks follow the nested structure of one response:
 
 ```text
+response.input
 response.start
 ├── response.user_turn?
 ├── response.loop
@@ -19,7 +20,7 @@ response.start
 │           └── response.completion
 │               ├── response.snapshot*
 │               └── response.summary
-└── response.commit
+└── response.finish
 ```
 
 `response.user_turn` appears only when a request introduces a new user message.
@@ -30,6 +31,7 @@ validators](llms/retries.md) explains that process. Each attempt can produce man
 
 | Hook | Receives | Returns | What it can change |
 | --- | --- | --- | --- |
+| `response.input` | `items`, `request`, `auth_context`, `svcs` | Input items | Input items before they are processed into state |
 | `response.start` | `state` | `None` | The complete response, including final status |
 | `response.user_turn` | `state` | `None` | Stop or reset work from the previous user turn |
 | `response.loop` | `state` | A result or `None` | Whether and how main-model turns repeat |
@@ -38,7 +40,7 @@ validators](llms/retries.md) explains that process. Each attempt can produce man
 | `response.completion` | `state`, `request`, `validators` | `ChatCompletionResult` | Streaming and [retry validation](llms/retries.md) for one turn |
 | `response.snapshot` | `state`, `request`, `snapshot` | `Snapshot` | Each accumulated update from a completion attempt |
 | `response.summary` | `state`, `source` | `None` | How [reasoning summaries](summary.md) stream during completion |
-| `response.commit` | `state` | `None` | State finalization and published response output |
+| `response.finish` | `state`, `status` | `None` | How state is saved when the response ends |
 
 ### Examples
 

@@ -145,8 +145,8 @@ This is why `block()` and `unblock()` require `by`: a plugin can release the blo
 another plugin still needs paused.
 
 What happens after the final block is released depends on where the response is. Before `response.loop`, the main model can
-take another turn. After the loop but before `response.commit`, commit can return the waiting draft without another model
-call. Output already returned or compacted is not returned twice.
+take another turn. After the loop, `response.finish` can return the waiting draft without another model call. Output already
+returned or compacted is not returned twice.
 
 ## Let a new user message take priority
 

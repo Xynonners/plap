@@ -183,7 +183,15 @@ async def _prepare_create(
                 reasoning_to_output=float(config.reasoning_to_output),
             ),
         )
-        prepared = await response_store.prepare_request(auth_context, request)
+        input_items = await bus.emit(
+            "response.input",
+            items=request.input_items,
+            request=request,
+            auth_context=auth_context,
+            svcs=svcs,
+        )
+        effective_request = request.model_copy(update={"input": list(input_items)})
+        prepared = await response_store.prepare_request(auth_context, effective_request)
         thread_codes = _thread_codes(svcs)
         ingested = await ingest_response_request(
             prepared.execution_request,
@@ -331,7 +339,7 @@ async def _execute_response(state: State) -> None:
     except anyio.get_cancelled_exc_class():
         if coordinator.current_response().status == "in_progress":
             with anyio.CancelScope(shield=True):
-                await state.save_progress()
+                await bus.emit("response.finish", state=state, status="cancelled")
                 await coordinator.cancelled()
         raise
     except ResponseFinalizationError:
@@ -347,7 +355,7 @@ async def _execute_response(state: State) -> None:
         logger.error("response.execute.unterminated", response_id=coordinator.response_id)
 
     with anyio.CancelScope(shield=True):
-        await state.save_progress()
+        await bus.emit("response.finish", state=state, status="failed")
         try:
             await coordinator.failed()
         except Exception as exc:
