@@ -35,6 +35,8 @@ logger = structlog.stdlib.get_logger(__name__)
 type PayloadObject = dict[str, object]
 type ResponseFields = dict[str, object]
 
+_MAX_INPUT_INDEX = 2**31 - 1
+
 
 def _conflicting_continuation_parameters_error() -> PlapError:
     return PlapError(
@@ -278,7 +280,7 @@ class ResponseStore:
     async def begin_response(self, prepared: PreparedRequest, response: ResponseObject) -> None:
         if prepared.response_request.store is False:
             return
-        input_items = self._stored_input_payloads(response.id, prepared.stored_input_items)
+        input_items = self._stored_input_payloads(prepared.stored_input_items)
         logger.info(
             "response.store.begin",
             input_item_count=len(input_items),
@@ -761,21 +763,63 @@ class ResponseStore:
         finally:
             result.close()
 
+    @staticmethod
+    def _generated_input_item_id(response_id: str, input_index: int) -> str:
+        return f"in_{response_id}_{input_index}"
+
+    @classmethod
+    def _parse_generated_input_item_id(cls, item_id: str) -> tuple[str, int] | None:
+        if not item_id.startswith("in_"):
+            return None
+        response_id, separator, input_index_text = item_id[3:].rpartition("_")
+        if not separator or not response_id or not input_index_text.isascii() or not input_index_text.isdigit():
+            return None
+        input_index = int(input_index_text)
+        if input_index > _MAX_INPUT_INDEX or cls._generated_input_item_id(response_id, input_index) != item_id:
+            return None
+        return response_id, input_index
+
+    @classmethod
+    def _project_input_payload(
+        cls,
+        payload: Mapping[str, object],
+        *,
+        response_id: str,
+        input_index: int,
+    ) -> PayloadObject:
+        projected = dict(payload)
+        if projected.get("id") is None:
+            projected["id"] = cls._generated_input_item_id(response_id, input_index)
+        return projected
+
     async def _replay_items(self, connection: AsyncConnection, scope_id: UUID, response_id: str) -> list[RequestInputItem]:
         result = await connection.execute(
             text(
                 """
-                select payload
+                select replay_response_id, direction, item_index, payload
                   from responses.list_response_replay(:scope_id, :response_id)
                 """
             ),
             {"scope_id": scope_id, "response_id": response_id},
         )
         try:
-            rows = result.scalars().all()
+            rows = result.mappings().all()
         finally:
             result.close()
-        return [self._request_input_from_payload(payload) for payload in rows]
+        payloads = []
+        for row in rows:
+            payload = cast(Mapping[str, object], row["payload"])
+            if row["direction"] == "input":
+                payloads.append(
+                    self._project_input_payload(
+                        payload,
+                        response_id=str(row["replay_response_id"]),
+                        input_index=int(row["item_index"]),
+                    )
+                )
+            else:
+                payloads.append(dict(payload))
+        return [self._request_input_from_payload(payload) for payload in payloads]
 
     def _resolve_execution_items(
         self,
@@ -834,12 +878,23 @@ class ResponseStore:
     ) -> dict[str, list[PayloadObject]]:
         if not item_ids:
             return {}
+        generated_items = []
+        for item_id in item_ids:
+            parsed = self._parse_generated_input_item_id(item_id)
+            if parsed is None:
+                continue
+            response_id, input_index = parsed
+            generated_items.append({"item_id": item_id, "response_id": response_id, "input_index": input_index})
         result = await connection.execute(
             text(
                 """
                 with requested as (
                   select distinct value as item_id
                     from jsonb_array_elements_text(cast(:item_ids as jsonb))
+                ), requested_generated as (
+                  select item_id, response_id, input_index
+                    from jsonb_to_recordset(cast(:generated_items as jsonb))
+                      as item(item_id text, response_id text, input_index integer)
                 )
                 select requested.item_id, payload.payload_json
                   from requested
@@ -850,6 +905,24 @@ class ResponseStore:
                   join responses.response_input_items item
                     on item.scope_id = payload.scope_id
                    and item.payload_id = payload.payload_id
+                 where not exists (
+                     select 1
+                       from responses.response_tombstones tombstone
+                      where tombstone.scope_id = item.scope_id
+                        and tombstone.response_id = item.response_id
+                   )
+                union all
+                select generated.item_id,
+                       payload.payload_json || jsonb_build_object('id', generated.item_id)
+                  from requested_generated generated
+                  join responses.response_input_items item
+                    on item.scope_id = :scope_id
+                   and item.response_id = generated.response_id
+                   and item.input_index = generated.input_index
+                  join responses.payloads payload
+                    on payload.scope_id = item.scope_id
+                   and payload.payload_id = item.payload_id
+                   and payload.item_id is null
                  where not exists (
                      select 1
                        from responses.response_tombstones tombstone
@@ -874,7 +947,11 @@ class ResponseStore:
                    )
                 """
             ),
-            {"scope_id": scope_id, "item_ids": self._json_text(item_ids)},
+            {
+                "scope_id": scope_id,
+                "item_ids": self._json_text(item_ids),
+                "generated_items": self._json_text(generated_items),
+            },
         )
         try:
             rows = result.mappings().all()
@@ -895,14 +972,8 @@ class ResponseStore:
         return _REQUEST_INPUT_ADAPTER.validate_python(normalized)
 
     @staticmethod
-    def _stored_input_payloads(response_id: str, items: list[RequestInputItem]) -> list[PayloadObject]:
-        payloads: list[PayloadObject] = []
-        for index, item in enumerate(items):
-            payload = item.model_dump(mode="json", exclude_none=True)
-            if payload.get("id") is None:
-                payload["id"] = f"in_{response_id}_{index}"
-            payloads.append(payload)
-        return payloads
+    def _stored_input_payloads(items: list[RequestInputItem]) -> list[PayloadObject]:
+        return [item.model_dump(mode="json", exclude_none=True) for item in items]
 
     @staticmethod
     def _response_fields(response: ResponseObject) -> ResponseFields:
@@ -972,7 +1043,7 @@ class ResponseStore:
         result = await connection.execute(
             text(
                 """
-                select payload.payload_json
+                select item.input_index, payload.payload_json
                   from responses.response_input_items item
                   join responses.payloads payload
                     on payload.scope_id = item.scope_id
@@ -985,7 +1056,14 @@ class ResponseStore:
             {"scope_id": scope_id, "response_id": response_id},
         )
         try:
-            return [dict(cast(Mapping[str, object], payload)) for payload in result.scalars().all()]
+            return [
+                self._project_input_payload(
+                    cast(Mapping[str, object], row["payload_json"]),
+                    response_id=response_id,
+                    input_index=int(row["input_index"]),
+                )
+                for row in result.mappings().all()
+            ]
         finally:
             result.close()
 

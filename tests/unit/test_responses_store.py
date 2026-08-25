@@ -13,6 +13,7 @@ from plap.responses.contracts import (
     RequestFunctionCallOutputItem,
     RequestInputItem,
     RequestItemReference,
+    RequestMessageItem,
     ResponseCreateRequest,
     ResponseFunctionCallItem,
     ResponseFunctionCallOutputItem,
@@ -104,14 +105,39 @@ def test_stored_function_items_preserve_direct_callers() -> None:
         ),
     ]
 
-    payloads = ResponseStore._stored_input_payloads("resp_1", items)
-    restored = [ResponseStore._input_items_page_item_from_payload(payload) for payload in payloads]
+    payloads = ResponseStore._stored_input_payloads(items)
+    restored = [
+        ResponseStore._input_items_page_item_from_payload(
+            ResponseStore._project_input_payload(payload, response_id="resp_1", input_index=index)
+        )
+        for index, payload in enumerate(payloads)
+    ]
 
     restored_call, restored_output = restored
     assert isinstance(restored_call, ResponseFunctionCallItem)
     assert isinstance(restored_output, ResponseFunctionCallOutputItem)
     assert restored_call.caller == caller
     assert restored_output.caller == caller
+
+
+def test_anonymous_input_id_is_projected_without_changing_canonical_payload() -> None:
+    item = RequestMessageItem(content="hello", role="user", type="message")
+
+    payload = ResponseStore._stored_input_payloads([item])[0]
+    projected = ResponseStore._project_input_payload(payload, response_id="resp_1", input_index=0)
+
+    assert "id" not in payload
+    assert projected == {**payload, "id": "in_resp_1_0"}
+
+
+def test_explicit_input_id_remains_in_canonical_payload() -> None:
+    item = RequestMessageItem(content="hello", id="msg_existing", role="user", type="message")
+
+    payload = ResponseStore._stored_input_payloads([item])[0]
+    projected = ResponseStore._project_input_payload(payload, response_id="resp_1", input_index=0)
+
+    assert payload["id"] == "msg_existing"
+    assert projected == payload
 
 
 @pytest.mark.parametrize("status", ["completed", "incomplete", "failed", "cancelled"])
