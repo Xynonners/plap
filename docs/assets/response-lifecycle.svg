@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
-  <title id="title">How a review continues across requests</title>
+  <title id="title">How an advisor continues across requests</title>
   <desc id="desc">A user message starts the main model, which calls a server tool and produces a draft. An advisor plugin holds the draft, calls an advisor model, and asks the client to run a tool. The first API request saves both threads. A second request restores them, appends the tool result to the advisor thread, finishes review, and returns advice to the main model before the final answer.</desc>
   <defs>
     <marker id="black-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
@@ -24,8 +24,8 @@
 
   <rect width="1200" height="640" fill="#f7f6f2"/>
 
-  <text x="40" y="48" class="heading">How a review continues across requests</text>
-  <text x="40" y="72" class="body">The advisor holds a draft, asks the client to run a tool, then resumes when the client returns the result.</text>
+  <text x="40" y="48" class="heading">How an advisor continues across requests</text>
+  <text x="40" y="72" class="body">The advisor holds a draft, calls a tool on the client, then advises the main agent to revise its response.</text>
   <path d="M40 92H1160" class="guide"/>
 
   <!-- Request spans -->
@@ -79,7 +79,6 @@
   <path d="M755 558H838" class="plugin" marker-end="url(#orange-arrow)"/>
   <circle cx="846" cy="558" r="5" fill="#ff5a00"/>
   <text x="862" y="540" class="event-orange">Restore both threads</text>
-  <text x="862" y="580" class="body">main remains held; advisor completes first</text>
 
   <!-- Client returns tool output -->
   <path d="M724 168H846" class="plugin" marker-end="url(#orange-arrow)"/>
