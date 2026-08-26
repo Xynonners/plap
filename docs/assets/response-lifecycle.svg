@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="640" viewBox="0 0 1240 640" role="img" aria-labelledby="title desc">
   <title id="title">How an advisor continues across requests</title>
   <desc id="desc">A user message starts the main model, which calls a server tool and produces a draft. An advisor plugin holds the draft, calls an advisor model, and asks the client to run a tool. The first API request saves both threads. A second request restores them, appends the tool result to the advisor thread, finishes review, and returns advice to the main model before the final answer.</desc>
   <defs>
@@ -23,7 +23,8 @@
     </style>
   </defs>
 
-  <rect width="1200" height="640" fill="#0d1117"/>
+  <rect width="1240" height="640" fill="#0d1117"/>
+  <rect x="1" y="1" width="1238" height="638" fill="none" stroke="#f0f6fc" stroke-width="2"/>
 
   <text x="40" y="48" class="heading">How an advisor continues across requests</text>
   <text x="40" y="72" class="body">The advisor holds a draft, calls a tool on the client, then advises the main agent to revise its response.</text>
@@ -79,7 +80,7 @@
   <text x="734" y="540" text-anchor="end" class="event-orange">Save both threads</text>
   <path d="M755 558H838" class="plugin" marker-end="url(#orange-arrow)"/>
   <circle cx="846" cy="558" r="5" fill="#ff5a00"/>
-  <text x="862" y="540" class="event-orange">Restore both threads</text>
+  <text x="862" y="540" text-anchor="middle" class="event-orange">Restore both threads</text>
 
   <!-- Client returns tool output -->
   <path d="M724 168H846" class="plugin" marker-end="url(#orange-arrow)"/>
@@ -93,10 +94,10 @@
   <text x="938" y="456" text-anchor="middle" class="event-orange">Review model</text>
 
   <!-- Advice returns to main, then final output -->
-  <path d="M944 428H988V296" class="plugin" marker-end="url(#orange-arrow)"/>
-  <circle cx="988" cy="288" r="6" fill="#0d1117" stroke="#f0f6fc" stroke-width="2"/>
-  <text x="988" y="270" text-anchor="middle" class="event">Main revises</text>
-  <path d="M994 288H1090" class="core" marker-end="url(#core-arrow)"/>
+  <path d="M944 428H1004V296" class="plugin" marker-end="url(#orange-arrow)"/>
+  <circle cx="1004" cy="288" r="6" fill="#0d1117" stroke="#f0f6fc" stroke-width="2"/>
+  <text x="1004" y="270" text-anchor="middle" class="event">Main revises</text>
+  <path d="M1010 288H1090" class="core" marker-end="url(#core-arrow)"/>
   <circle cx="1098" cy="288" r="5" fill="#f0f6fc"/>
   <text x="1112" y="270" class="event">Final answer</text>
   <path d="M1098 282V174" class="core" marker-end="url(#core-arrow)"/>
