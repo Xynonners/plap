@@ -17,8 +17,9 @@ from plap.responses.contracts import (
     ResponseCreateRequest,
     ResponseFunctionCallItem,
     ResponseFunctionCallOutputItem,
+    ResponseStatus,
 )
-from plap.responses.store import ResponseStore
+from plap.responses.store import ResolvedInputItem, ResponseReplay, ResponseStore
 
 
 class _Database:
@@ -33,29 +34,42 @@ class _ResponseStore(ResponseStore):
         assert conversation_id == "conv_123"
         return "resp_parent"
 
-    async def _replay_items(self, connection, scope_id, response_id: str) -> list[RequestInputItem]:
-        _ = connection, scope_id
+    async def get_replay(self, auth_context, response_id: str) -> ResponseReplay | None:
+        _ = auth_context
         assert response_id == "resp_parent"
-        return [RequestItemReference(id="msg_prior", type="item_reference")]
+        return ResponseReplay(
+            status="completed",
+            items=(RequestItemReference(id="msg_prior", type="item_reference"),),
+        )
 
     async def _stored_item_payloads_by_id(self, connection, scope_id, item_ids: list[str]):
         _ = connection, scope_id
         assert item_ids == ["msg_prior", "msg_current"]
         return {
-            "msg_prior": [{"content": "prior", "id": "msg_prior", "role": "user", "type": "message"}],
-            "msg_current": [{"content": "current", "id": "msg_current", "role": "user", "type": "message"}],
+            "msg_prior": [
+                ResolvedInputItem(
+                    item=RequestMessageItem(content="prior", id="msg_prior", role="user", type="message"),
+                    payload_id=uuid4(),
+                )
+            ],
+            "msg_current": [
+                ResolvedInputItem(
+                    item=RequestMessageItem(content="current", id="msg_current", role="user", type="message"),
+                    payload_id=uuid4(),
+                )
+            ],
         }
 
 
 class _ReplayStatusStore(ResponseStore):
-    def __init__(self, status: str) -> None:
+    def __init__(self, status: ResponseStatus) -> None:
         super().__init__(_Database())
         self._status = status
 
-    async def _response_replay_status(self, connection, scope_id, response_id: str) -> str | None:
-        _ = connection, scope_id
+    async def get_replay(self, auth_context, response_id: str) -> ResponseReplay | None:
+        _ = auth_context
         assert response_id == "resp_parent"
-        return self._status
+        return ResponseReplay(status=self._status, items=())
 
 
 def _auth_context() -> AuthContext:
@@ -77,7 +91,8 @@ async def test_prepare_request_keeps_canonical_input_and_resolves_execution_hist
 
     assert prepared.response_request.previous_response_id == "resp_parent"
     assert prepared.response_request.input == [reference]
-    assert prepared.stored_input_items == [reference]
+    assert [resolved.item.id for resolved in prepared.resolved_current_input_items] == ["msg_current"]
+    assert prepared.resolved_current_input_items[0].payload_id is not None
     assert prepared.execution_request.previous_response_id == "resp_parent"
     assert prepared.execution_request.temperature == 0.4
     assert isinstance(prepared.execution_request.input, list)
@@ -141,18 +156,26 @@ def test_explicit_input_id_remains_in_canonical_payload() -> None:
 
 
 @pytest.mark.parametrize("status", ["completed", "incomplete", "failed", "cancelled"])
-async def test_terminal_responses_are_replayable(status: str) -> None:
+async def test_terminal_responses_are_replayable(status: ResponseStatus) -> None:
     store = _ReplayStatusStore(status)
 
-    await store._require_replayable_response(object(), uuid4(), "resp_parent", param="previous_response_id")
+    prepared = await store.prepare_request(
+        _auth_context(),
+        ResponseCreateRequest(input=[], model="plap/test", previous_response_id="resp_parent"),
+    )
+
+    assert prepared.response_request.previous_response_id == "resp_parent"
 
 
 @pytest.mark.parametrize("status", ["queued", "in_progress"])
-async def test_nonterminal_responses_are_not_replayable(status: str) -> None:
+async def test_nonterminal_responses_are_not_replayable(status: ResponseStatus) -> None:
     store = _ReplayStatusStore(status)
 
     with pytest.raises(PlapError) as exc_info:
-        await store._require_replayable_response(object(), uuid4(), "resp_parent", param="previous_response_id")
+        await store.prepare_request(
+            _auth_context(),
+            ResponseCreateRequest(input=[], model="plap/test", previous_response_id="resp_parent"),
+        )
 
     assert exc_info.value.public is not None
     assert exc_info.value.public.code == "previous_response_not_replayable"

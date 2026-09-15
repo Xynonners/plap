@@ -121,7 +121,7 @@ def _prepared(request: ResponseCreateRequest | None = None) -> PreparedRequest:
         scope_id=uuid4(),
         response_request=actual_request,
         execution_request=actual_request,
-        stored_input_items=[],
+        resolved_current_input_items=[],
     )
 
 
@@ -577,7 +577,7 @@ async def test_response_finish_listener_failure_prevents_terminal_transition() -
     @bus.listen("response.finish")
     async def fail_after_state_persistence(state, status, *, next):
         await next(state=state, status=status)
-        raise RuntimeError("continuity indexing failed")
+        raise RuntimeError("finish listener failed")
 
     channels = _RecordingChannels()
     store = _RecordingStore()

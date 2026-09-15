@@ -102,3 +102,83 @@ async def test_anonymous_inputs_share_payload_without_sharing_public_item_ids(db
     assert isinstance(replayed_item, RequestMessageItem)
     assert replayed_item.id == first_item.id
     assert replayed_item.content == "hello"
+
+
+async def test_get_replay_returns_ordered_lineage_and_distinguishes_empty_from_missing(
+    db_session_maker,
+    test_config,
+) -> None:
+    scope_id = uuid4()
+    root_input = {"type": "message", "role": "user", "content": "root user"}
+    root_output = {
+        "type": "message",
+        "id": "msg_root",
+        "role": "assistant",
+        "status": "completed",
+        "content": [{"type": "output_text", "annotations": [], "text": "root answer"}],
+    }
+    child_input = {"type": "message", "role": "user", "content": "child user"}
+    child_output = {
+        "type": "message",
+        "id": "msg_child",
+        "role": "assistant",
+        "status": "completed",
+        "content": [{"type": "output_text", "annotations": [], "text": "child answer"}],
+    }
+
+    async with db_session_maker() as session:
+        for response_id, previous_response_id, input_items, output_items in (
+            ("resp_root", None, [root_input], [root_output]),
+            ("resp_child", "resp_root", [child_input], [child_output]),
+            ("resp_empty", None, [], []),
+        ):
+            await session.execute(
+                text(
+                    """
+                    select responses.create_response_record(
+                      :scope_id,
+                      :response_id,
+                      :previous_response_id,
+                      cast(:input_items as jsonb),
+                      cast(:output_items as jsonb),
+                      null
+                    )
+                    """
+                ),
+                {
+                    "scope_id": scope_id,
+                    "response_id": response_id,
+                    "previous_response_id": previous_response_id,
+                    "input_items": json.dumps(input_items),
+                    "output_items": json.dumps(output_items),
+                },
+            )
+        await session.commit()
+
+    database = Database(test_config.database_url)
+    store = ResponseStore(database)
+    auth_context = AuthContext(api_key_id=uuid4(), organization_id=None, user_id=scope_id)
+    try:
+        replay = await store.get_replay(auth_context, "resp_child")
+        empty = await store.get_replay(auth_context, "resp_empty")
+        missing = await store.get_replay(auth_context, "resp_missing")
+        deleted = await store.delete_response(auth_context, "resp_child")
+        tombstoned = await store.get_replay(auth_context, "resp_child")
+    finally:
+        await database.dispose_all()
+
+    assert replay is not None
+    assert replay.status == "completed"
+    assert replay.is_replayable
+    assert [item.id for item in replay.items] == ["in_resp_root_0", "msg_root", "in_resp_child_0", "msg_child"]
+    assert [item.role for item in replay.items if isinstance(item, RequestMessageItem)] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+    ]
+    assert empty is not None
+    assert empty.items == ()
+    assert missing is None
+    assert deleted
+    assert tombstoned is None

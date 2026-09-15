@@ -50,7 +50,7 @@ from plap.responses.contracts import (
 from plap.responses.ingest.ingest import ingest_response_request
 from plap.responses.projection import ResponseProjection
 from plap.responses.state import State
-from plap.responses.store import ResponseStore
+from plap.responses.store import PreparedRequest, ResponseStore
 from plap.responses.streaming import ResponseFinalizationError, StreamCoordinator
 from plap.telemetry import record_scope_context
 
@@ -208,6 +208,7 @@ async def _prepare_create(
             last_reasoning_id=ingested.last_reasoning_id,
             last_compaction_id=ingested.last_compaction_id,
         )
+        svcs.register_local_value(PreparedRequest, prepared)
         svcs.register_local_value(StreamCoordinator, coordinator)
         state = State.from_ingested(
             ingested=ingested,

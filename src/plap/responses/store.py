@@ -25,6 +25,7 @@ from plap.responses.contracts import (
     RequestReasoningItem,
     ResponseCreateRequest,
     ResponseObject,
+    ResponseStatus,
 )
 
 _REQUEST_INPUT_ADAPTER = TypeAdapter(RequestInputItem)
@@ -203,12 +204,32 @@ def _item_reference_ambiguous_error(item_id: str) -> PlapError:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedInputItem:
+    item: RequestInputItem
+    payload_id: UUID | None
+
+
 @dataclass(slots=True)
 class PreparedRequest:
     scope_id: UUID
     response_request: ResponseCreateRequest
     execution_request: ResponseCreateRequest
-    stored_input_items: list[RequestInputItem]
+    resolved_current_input_items: list[ResolvedInputItem]
+
+
+@dataclass(frozen=True, slots=True)
+class ResponseReplay:
+    status: ResponseStatus
+    items: tuple[RequestInputItem, ...]
+
+    @property
+    def is_replayable(self) -> bool:
+        match self.status:
+            case "completed" | "incomplete" | "failed" | "cancelled":
+                return True
+            case "queued" | "in_progress":
+                return False
 
 
 class ResponseStore:
@@ -216,7 +237,7 @@ class ResponseStore:
         self._database = database
 
     async def prepare_request(self, auth_context: AuthContext, request: ResponseCreateRequest) -> PreparedRequest:
-        scope_id = self._scope_id(auth_context)
+        scope_id = auth_context.scope_id
         conversation_id = request.conversation_id
         if request.previous_response_id is not None and conversation_id is not None:
             raise _conflicting_continuation_parameters_error()
@@ -224,37 +245,47 @@ class ResponseStore:
             raise _conversation_requires_store_error()
 
         current_input_items = list(request.input_items)
-        stored_input_items = self._stored_current_input_items(current_input_items)
         parent_response_id = request.previous_response_id
         replay_items: list[RequestInputItem] = []
-        execution_replay_items: list[RequestInputItem] = []
-        execution_current_input_items: list[RequestInputItem] = list(current_input_items)
-        if parent_response_id is not None or conversation_id is not None or self._needs_execution_resolution(current_input_items):
+        if parent_response_id is None and conversation_id is not None:
             async with self._database.connection() as connection:
-                if parent_response_id is not None:
-                    await self._require_replayable_response(
-                        connection,
-                        scope_id,
-                        parent_response_id,
-                        param="previous_response_id",
-                    )
-                else:
-                    parent_response_id = await self._conversation_head(connection, scope_id, conversation_id)
+                parent_response_id = await self._conversation_head(connection, scope_id, conversation_id)
 
-                if parent_response_id is not None:
-                    replay_items = await self._replay_items(connection, scope_id, parent_response_id)
+        if parent_response_id is not None:
+            replay = await self.get_replay(auth_context, parent_response_id)
+            if replay is None:
+                if request.previous_response_id is None:
+                    raise RuntimeError("conversation head response is unavailable")
+                raise _previous_response_not_found_error(parent_response_id, param="previous_response_id")
+            if not replay.is_replayable:
+                raise _previous_response_not_replayable_error(
+                    parent_response_id,
+                    status=replay.status,
+                    param="previous_response_id" if request.previous_response_id is not None else "conversation",
+                )
+            replay_items = list(replay.items)
+
+        resolution_ids = self._execution_resolution_ids(replay_items, current_input_items)
+        payloads_by_id: dict[str, list[ResolvedInputItem]] = {}
+        if resolution_ids:
+            async with self._database.connection() as connection:
                 payloads_by_id = await self._stored_item_payloads_by_id(
                     connection,
                     scope_id,
-                    self._execution_resolution_ids(replay_items, current_input_items),
+                    resolution_ids,
                 )
-                execution_replay_items = self._resolve_execution_items(replay_items, payloads_by_id)
-                execution_current_input_items = self._resolve_execution_items(current_input_items, payloads_by_id)
-        else:
-            execution_replay_items = replay_items
+        resolved_replay_items = self._resolve_execution_items(replay_items, payloads_by_id)
+        resolved_current_input_items = self._resolve_execution_items(current_input_items, payloads_by_id)
 
         response_request = request.model_copy(update={"previous_response_id": parent_response_id})
-        execution_request = response_request.model_copy(update={"input": [*execution_replay_items, *execution_current_input_items]})
+        execution_request = response_request.model_copy(
+            update={
+                "input": [
+                    *(resolved.item for resolved in resolved_replay_items),
+                    *(resolved.item for resolved in resolved_current_input_items),
+                ]
+            }
+        )
         logger.info(
             "response.store.prepared",
             conversation_id=conversation_id,
@@ -273,24 +304,91 @@ class ResponseStore:
             scope_id=scope_id,
             response_request=response_request,
             execution_request=execution_request,
-            stored_input_items=stored_input_items,
+            resolved_current_input_items=resolved_current_input_items,
         )
 
     async def begin_response(self, prepared: PreparedRequest, response: ResponseObject) -> None:
         if prepared.response_request.store is False:
             return
-        input_items = self._stored_input_payloads(prepared.stored_input_items)
+        input_items = [resolved.item for resolved in prepared.resolved_current_input_items]
+        input_payloads = self._stored_input_payloads(input_items)
         logger.info(
             "response.store.begin",
-            input_item_count=len(input_items),
+            input_item_count=len(input_payloads),
             response_id=response.id,
         )
         logger.bind(log_channel="payload").info(
             "response.store.begin.payload",
-            input_items=input_items,
+            input_items=input_payloads,
             response=response.model_dump(mode="json", exclude_none=True),
         )
+        parameters = {
+            "scope_id": prepared.scope_id,
+            "response_id": response.id,
+            "prev_response_id": prepared.response_request.previous_response_id,
+            "retention": timedelta(days=30),
+            "status": "in_progress",
+            "fields": self._json_text(self._response_fields(response)),
+        }
+        records = [
+            {
+                "input_index": input_index,
+                "payload_id": None if resolved.payload_id is None else str(resolved.payload_id),
+                "payload": (resolved.item.model_dump(mode="json", exclude_none=True) if resolved.payload_id is None else None),
+            }
+            for input_index, resolved in enumerate(prepared.resolved_current_input_items)
+        ]
         async with self._database.connection_transaction() as connection:
+            if records:
+                create_result = await connection.execute(
+                    text(
+                        """
+                        with created as materialized (
+                          select responses.create_response_record(
+                              :scope_id,
+                              :response_id,
+                              :prev_response_id,
+                              '[]'::jsonb,
+                              '[]'::jsonb,
+                              :retention,
+                              :status,
+                              null,
+                              cast(:fields as jsonb)
+                            ) as response_id
+                        ), requested as (
+                          select input_index, payload_id, payload
+                            from jsonb_to_recordset(cast(:items as jsonb))
+                              as item(input_index integer, payload_id uuid, payload jsonb)
+                        )
+                        insert into responses.response_input_items (
+                          scope_id,
+                          response_id,
+                          input_index,
+                          payload_id
+                        )
+                        select :scope_id,
+                               created.response_id,
+                               requested.input_index,
+                               case
+                                 when requested.payload_id is not null then requested.payload_id
+                                 else responses.get_or_create_payload(:scope_id, requested.payload)
+                               end
+                          from created
+                          cross join requested
+                         order by requested.input_index
+                        returning response_id
+                        """
+                    ),
+                    {**parameters, "items": self._json_text(records)},
+                )
+                try:
+                    created_response_ids = create_result.scalars().all()
+                finally:
+                    create_result.close()
+                if created_response_ids != [response.id] * len(records):
+                    raise RuntimeError("response input items were not persisted in order")
+                return
+
             create_result = await connection.execute(
                 text(
                     """
@@ -298,7 +396,7 @@ class ResponseStore:
                         :scope_id,
                         :response_id,
                         :prev_response_id,
-                        cast(:input_items as jsonb),
+                        '[]'::jsonb,
                         '[]'::jsonb,
                         :retention,
                         :status,
@@ -307,15 +405,7 @@ class ResponseStore:
                       )
                     """
                 ),
-                {
-                    "scope_id": prepared.scope_id,
-                    "response_id": response.id,
-                    "prev_response_id": prepared.response_request.previous_response_id,
-                    "input_items": self._json_text(input_items),
-                    "retention": timedelta(days=30),
-                    "status": "in_progress",
-                    "fields": self._json_text(self._response_fields(response)),
-                },
+                parameters,
             )
             create_result.scalar_one()
             create_result.close()
@@ -564,7 +654,7 @@ class ResponseStore:
             return True
 
     async def get_response(self, auth_context: AuthContext, response_id: str) -> ResponseObject | None:
-        scope_id = self._scope_id(auth_context)
+        scope_id = auth_context.scope_id
         async with self._database.connection() as connection:
             record = await self._mappings_one_or_none(
                 connection,
@@ -598,7 +688,7 @@ class ResponseStore:
         limit: int | None,
         order: str | None,
     ) -> InputItemsPage:
-        scope_id = self._scope_id(auth_context)
+        scope_id = auth_context.scope_id
         direction = order or "asc"
         if direction not in {"asc", "desc"}:
             raise _input_items_order_error()
@@ -629,7 +719,7 @@ class ResponseStore:
         )
 
     async def delete_response(self, auth_context: AuthContext, response_id: str) -> bool:
-        scope_id = self._scope_id(auth_context)
+        scope_id = auth_context.scope_id
         async with self._database.connection_transaction() as connection:
             exists = await self._response_exists(connection, scope_id, response_id)
             if not exists:
@@ -663,26 +753,8 @@ class ResponseStore:
             return True
 
     @staticmethod
-    def _scope_id(auth_context: AuthContext) -> UUID:
-        return auth_context.organization_id or auth_context.user_id
-
-    @staticmethod
     def _is_implicit_reasoning_replay(item: RequestInputItem) -> bool:
         return isinstance(item, RequestReasoningItem) and item.id is not None and item.encrypted_content is None
-
-    @classmethod
-    def _needs_execution_resolution(cls, items: list[RequestInputItem]) -> bool:
-        return any(isinstance(item, RequestItemReference) or cls._is_implicit_reasoning_replay(item) for item in items)
-
-    @classmethod
-    def _stored_current_input_items(cls, items: list[RequestInputItem]) -> list[RequestInputItem]:
-        stored: list[RequestInputItem] = []
-        for item in items:
-            if cls._is_implicit_reasoning_replay(item):
-                stored.append(RequestItemReference(id=item.id, type="item_reference"))
-                continue
-            stored.append(item)
-        return stored
 
     @classmethod
     def _execution_resolution_ids(cls, *item_groups: list[RequestInputItem]) -> list[str]:
@@ -698,44 +770,6 @@ class ResponseStore:
                 seen.add(item_id)
                 ids.append(item_id)
         return ids
-
-    async def _response_replay_status(self, connection: AsyncConnection, scope_id: UUID, response_id: str) -> str | None:
-        result = await connection.execute(
-            text(
-                """
-                select status
-                  from responses.response_records record
-                 where record.scope_id = :scope_id
-                   and record.response_id = :response_id
-                   and not exists (
-                       select 1
-                         from responses.response_tombstones tombstone
-                        where tombstone.scope_id = record.scope_id
-                          and tombstone.response_id = record.response_id
-                   )
-                """
-            ),
-            {"scope_id": scope_id, "response_id": response_id},
-        )
-        try:
-            status = result.scalar_one_or_none()
-            return None if status is None else str(status)
-        finally:
-            result.close()
-
-    async def _require_replayable_response(
-        self,
-        connection: AsyncConnection,
-        scope_id: UUID,
-        response_id: str,
-        *,
-        param: str,
-    ) -> None:
-        status = await self._response_replay_status(connection, scope_id, response_id)
-        if status is None:
-            raise _previous_response_not_found_error(response_id, param=param)
-        if status not in {"completed", "incomplete", "failed", "cancelled"}:
-            raise _previous_response_not_replayable_error(response_id, status=status, param=param)
 
     async def _conversation_head(self, connection: AsyncConnection, scope_id: UUID, conversation_id: str) -> str | None:
         result = await connection.execute(
@@ -783,22 +817,51 @@ class ResponseStore:
             projected["id"] = cls._generated_input_item_id(response_id, input_index)
         return projected
 
-    async def _replay_items(self, connection: AsyncConnection, scope_id: UUID, response_id: str) -> list[RequestInputItem]:
-        result = await connection.execute(
-            text(
-                """
-                select replay_response_id, direction, item_index, payload
-                  from responses.list_response_replay(:scope_id, :response_id)
-                """
-            ),
-            {"scope_id": scope_id, "response_id": response_id},
-        )
-        try:
-            rows = result.mappings().all()
-        finally:
-            result.close()
+    async def get_replay(self, auth_context: AuthContext, response_id: str) -> ResponseReplay | None:
+        """Load the ordered effective inputs and outputs persisted for replay."""
+        async with self._database.connection() as connection:
+            result = await connection.execute(
+                text(
+                    """
+                    select record.status,
+                           replay.replay_response_id,
+                           replay.direction,
+                           replay.item_index,
+                           replay.payload
+                      from responses.response_records record
+                      left join lateral responses.list_response_replay(record.scope_id, record.response_id)
+                        with ordinality as replay(
+                          replay_response_id,
+                          direction,
+                          item_index,
+                          payload_hash,
+                          payload,
+                          ordinal
+                        ) on true
+                     where record.scope_id = :scope_id
+                       and record.response_id = :response_id
+                       and not exists (
+                         select 1
+                           from responses.response_tombstones tombstone
+                          where tombstone.scope_id = record.scope_id
+                            and tombstone.response_id = record.response_id
+                       )
+                     order by replay.ordinal
+                    """
+                ),
+                {"scope_id": auth_context.scope_id, "response_id": response_id},
+            )
+            try:
+                rows = result.mappings().all()
+            finally:
+                result.close()
+        if not rows:
+            return None
+
         payloads = []
         for row in rows:
+            if row["replay_response_id"] is None:
+                continue
             payload = cast(Mapping[str, object], row["payload"])
             if row["direction"] == "input":
                 payloads.append(
@@ -810,14 +873,17 @@ class ResponseStore:
                 )
             else:
                 payloads.append(dict(payload))
-        return [self._request_input_from_payload(payload) for payload in payloads]
+        return ResponseReplay(
+            status=cast(ResponseStatus, str(rows[0]["status"])),
+            items=tuple(self._request_input_from_payload(payload) for payload in payloads),
+        )
 
     def _resolve_execution_items(
         self,
         items: list[RequestInputItem],
-        payloads_by_id: dict[str, list[PayloadObject]],
-    ) -> list[RequestInputItem]:
-        resolved: list[RequestInputItem] = []
+        payloads_by_id: dict[str, list[ResolvedInputItem]],
+    ) -> list[ResolvedInputItem]:
+        resolved: list[ResolvedInputItem] = []
         for item in items:
             if isinstance(item, RequestItemReference):
                 resolved.append(self._resolve_item_reference(item.id, payloads_by_id))
@@ -827,16 +893,16 @@ class ResponseStore:
                 if resolved_item is not None:
                     resolved.append(resolved_item)
                     continue
-                resolved.append(item)
+                resolved.append(ResolvedInputItem(item=item, payload_id=None))
                 continue
-            resolved.append(item)
+            resolved.append(ResolvedInputItem(item=item, payload_id=None))
         return resolved
 
     def _resolve_implicit_reasoning_replay(
         self,
         item_id: str | None,
-        payloads_by_id: dict[str, list[PayloadObject]],
-    ) -> RequestInputItem | None:
+        payloads_by_id: dict[str, list[ResolvedInputItem]],
+    ) -> ResolvedInputItem | None:
         if item_id is None:
             return None
         payloads = payloads_by_id.get(item_id, [])
@@ -844,29 +910,29 @@ class ResponseStore:
             return None
         if len(payloads) > 1:
             raise _item_reference_ambiguous_error(item_id)
-        resolved = self._request_input_from_payload(payloads[0])
-        if not isinstance(resolved, RequestReasoningItem):
+        resolved = payloads[0]
+        if not isinstance(resolved.item, RequestReasoningItem):
             return None
         return resolved
 
     def _resolve_item_reference(
         self,
         item_id: str,
-        payloads_by_id: dict[str, list[PayloadObject]],
-    ) -> RequestInputItem:
+        payloads_by_id: dict[str, list[ResolvedInputItem]],
+    ) -> ResolvedInputItem:
         payloads = payloads_by_id.get(item_id, [])
         if not payloads:
             raise _item_reference_not_found_error(item_id)
         if len(payloads) > 1:
             raise _item_reference_ambiguous_error(item_id)
-        return self._request_input_from_payload(payloads[0])
+        return payloads[0]
 
     async def _stored_item_payloads_by_id(
         self,
         connection: AsyncConnection,
         scope_id: UUID,
         item_ids: list[str],
-    ) -> dict[str, list[PayloadObject]]:
+    ) -> dict[str, list[ResolvedInputItem]]:
         if not item_ids:
             return {}
         generated_items = []
@@ -887,7 +953,7 @@ class ResponseStore:
                     from jsonb_to_recordset(cast(:generated_items as jsonb))
                       as item(item_id text, response_id text, input_index integer)
                 )
-                select requested.item_id, payload.payload_json
+                select requested.item_id, payload.payload_id, payload.payload_json
                   from requested
                   join responses.payloads payload
                     on payload.scope_id = :scope_id
@@ -904,6 +970,7 @@ class ResponseStore:
                    )
                 union all
                 select generated.item_id,
+                       null::uuid as payload_id,
                        payload.payload_json || jsonb_build_object('id', generated.item_id)
                   from requested_generated generated
                   join responses.response_input_items item
@@ -921,7 +988,7 @@ class ResponseStore:
                         and tombstone.response_id = item.response_id
                    )
                 union all
-                select requested.item_id, payload.payload_json
+                select requested.item_id, payload.payload_id, payload.payload_json
                   from requested
                   join responses.payloads payload
                     on payload.scope_id = :scope_id
@@ -948,11 +1015,23 @@ class ResponseStore:
             rows = result.mappings().all()
         finally:
             result.close()
-        payloads_by_id: dict[str, list[PayloadObject]] = {}
+        payloads_by_id: dict[str, list[ResolvedInputItem]] = {}
         for row in rows:
             item_id = cast(str, row["item_id"])
             payload = dict(cast(Mapping[str, object], row["payload_json"]))
-            payloads_by_id.setdefault(item_id, []).append(payload)
+            resolved = ResolvedInputItem(
+                item=self._request_input_from_payload(payload),
+                payload_id=cast(UUID | None, row["payload_id"]),
+            )
+            matches = payloads_by_id.setdefault(item_id, [])
+            for index, match in enumerate(matches):
+                if match.item != resolved.item:
+                    continue
+                if match.payload_id is None and resolved.payload_id is not None:
+                    matches[index] = resolved
+                break
+            else:
+                matches.append(resolved)
         return payloads_by_id
 
     @staticmethod

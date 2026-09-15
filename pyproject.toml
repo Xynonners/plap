@@ -71,6 +71,7 @@ easy = "plap.plugins.easy"
 summary = "plap.plugins.summary"
 vision = "plap.plugins.vision"
 advisor = "plap.plugins.advisor"
+continuity = "plap.plugins.continuity"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

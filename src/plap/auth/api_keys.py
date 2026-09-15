@@ -25,6 +25,10 @@ class AuthContext:
     organization_id: UUID | None
     user_id: UUID
 
+    @property
+    def scope_id(self) -> UUID:
+        return self.organization_id or self.user_id
+
 
 @dataclass(slots=True)
 class IssuedAPIKey:

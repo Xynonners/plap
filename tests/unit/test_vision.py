@@ -161,7 +161,7 @@ def _prepared(request: ResponseCreateRequest | None = None) -> PreparedRequest:
         scope_id=uuid4(),
         response_request=actual_request,
         execution_request=actual_request,
-        stored_input_items=[],
+        resolved_current_input_items=[],
     )
 
 

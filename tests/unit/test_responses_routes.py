@@ -153,7 +153,7 @@ def _prepared(request: ResponseCreateRequest | None = None) -> PreparedRequest:
         scope_id=uuid4(),
         response_request=response_request,
         execution_request=response_request,
-        stored_input_items=[],
+        resolved_current_input_items=[],
     )
 
 
@@ -219,7 +219,8 @@ def _state() -> State:
 async def test_prepare_create_prepares_and_stops_before_created() -> None:
     request = _request()
     config = _config()
-    store = _RecordingStore(_prepared(request))
+    prepared = _prepared(request)
+    store = _RecordingStore(prepared)
     registry = svcs.Registry()
     registry.register_value(AuthContext, _auth_context())
     registry.register_value(CueBox, config)
@@ -238,6 +239,7 @@ async def test_prepare_create_prepares_and_stops_before_created() -> None:
     assert store.begin_calls == 0
     assert state.request is request
     assert state.config is config
+    assert state.svcs.get(PreparedRequest) is prepared
     assert state.svcs.get(CompletionBudget).remaining is None
     assert state.memory == {}
     assert state.threads.messages.keys() == {"main"}
@@ -342,7 +344,7 @@ async def test_prepare_create_preserves_stored_user_boundary_and_resets_lineage(
         scope_id=uuid4(),
         response_request=response_request,
         execution_request=execution_request,
-        stored_input_items=[],
+        resolved_current_input_items=[],
     )
     store = _RecordingStore(prepared)
     registry = svcs.Registry()
@@ -398,7 +400,7 @@ async def test_prepare_create_echoes_inbound_compaction_anchor_into_reasoning() 
         scope_id=uuid4(),
         response_request=response_request,
         execution_request=execution_request,
-        stored_input_items=[],
+        resolved_current_input_items=[],
     )
     store = _RecordingStore(prepared)
     registry = svcs.Registry()

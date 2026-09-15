@@ -40,6 +40,7 @@ async def _reset_database_schema(database_url: str) -> None:
     engine = create_database_engine(database_url)
     try:
         async with engine.begin() as connection:
+            await connection.execute(text("DROP SCHEMA IF EXISTS continuity CASCADE"))
             await connection.execute(text("DROP SCHEMA IF EXISTS identity CASCADE"))
             await connection.execute(text("DROP SCHEMA IF EXISTS responses CASCADE"))
             await connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
