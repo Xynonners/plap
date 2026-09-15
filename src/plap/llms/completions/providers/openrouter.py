@@ -76,6 +76,9 @@ OPENROUTER_MODELS: dict[str, tuple[Quirk, ...]] = {
     "stepfun/step-3.5-flash": (),
     "xiaomi/mimo-v2.5": (),
     "xiaomi/mimo-v2.5-pro": (),
+    "z-ai/glm-5.2": (),
+    "z-ai/glm-5.3": (),
+    "z-ai/glm-5.3-flash": (),
 }
 
 
