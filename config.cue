@@ -127,7 +127,7 @@ config: #Config & {
         model_info: created: 1783268995
         model_info: input_modalities: ["text", "image"]
         main: #FieldConfig & {
-          model: *"crof/deepseek-v4-flash-0731,openrouter/deepseek/deepseek-v4-flash-0731:streamlake,openrouter/deepseek/deepseek-v4-flash-0731:baidu,openrouter/deepseek/deepseek-v4-flash-0731:gmicloud" | string
+          model: *"crof/glm-5.3-flash,openrouter/z-ai/glm-5.3-flash:z-ai,openrouter/z-ai/glm-5.3-flash:novita" | string
           max_completion_tokens: *131072 | int
           reasoning_effort: *"high" | #ReasoningEffort
         }
@@ -137,7 +137,7 @@ config: #Config & {
           reasoning_effort: *"low" | #ReasoningEffort
         }
         advisor: #FieldConfig & {
-          model: *"crof/deepseek-v4-flash-0731,openrouter/deepseek/deepseek-v4-flash-0731:streamlake,openrouter/deepseek/deepseek-v4-flash-0731:baidu,openrouter/deepseek/deepseek-v4-flash-0731:gmicloud" | string
+          model: *"crof/glm-5.3-flash,openrouter/z-ai/glm-5.3-flash:z-ai,openrouter/z-ai/glm-5.3-flash:novita" | string
           max_completion_tokens: *131072 | int
           reasoning_effort: *"high" | #ReasoningEffort
         }
