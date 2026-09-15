@@ -33,7 +33,14 @@ from plap.responses.ingest.sealing import (
     seal_compaction_payload,
     seal_reasoning_payload,
 )
-from plap.responses.routes import _accept_response, _execute_response, _model_object, _prepare_create, responses_socket
+from plap.responses.routes import (
+    _accept_response,
+    _execute_response,
+    _model_object,
+    _prepare_create,
+    create_response,
+    responses_socket,
+)
 from plap.responses.state import State
 from plap.responses.store import PreparedRequest, ResponseStore
 from plap.responses.streaming import StreamCoordinator
@@ -530,6 +537,34 @@ async def test_cancellation_runs_response_finish_before_terminalization(monkeypa
 
     assert observations == [("cancelled", "in_progress")]
     assert state.svcs.get(StreamCoordinator).current_response().status == "cancelled"
+
+
+async def test_nonstreaming_disconnect_propagates_cancellation(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Plugins:
+        def get(self, plugin_type):
+            _ = plugin_type
+            return object()
+
+    class App:
+        plugins = Plugins()
+
+    class Request:
+        app = App()
+
+        def __init__(self) -> None:
+            self.scope: dict[str, object] = {}
+
+        async def receive(self) -> dict[str, str]:
+            return {"type": "http.disconnect"}
+
+    async def block_create(*args, **kwargs):
+        _ = args, kwargs
+        await anyio.sleep_forever()
+
+    monkeypatch.setattr("plap.responses.routes.create", block_create)
+
+    with pytest.raises(anyio.get_cancelled_exc_class()):
+        await create_response.fn(Request(), _request(), object(), _auth_context())
 
 
 async def test_config_failure_raises_during_preparation() -> None:

@@ -536,6 +536,7 @@ async def create_response(
             headers={"content-type": "text/event-stream; charset=utf-8"},
         )
 
+    response: ResponseObject | None = None
     try:
         async with anyio.create_task_group() as task_group:
             watcher_scope = await task_group.start(_watch_http_disconnect, request, task_group.cancel_scope)
@@ -554,6 +555,8 @@ async def create_response(
         if unwrapped is exc:
             raise
         raise unwrapped from None
+    if response is None:
+        raise anyio.get_cancelled_exc_class()
     return projection.response(response)
 
 
