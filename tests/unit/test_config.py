@@ -7,6 +7,8 @@ import pytest
 import plap.config as config_mod
 from plap.config import CueBox, PackageLess, load
 
+CORE_SCHEMA = Path(__file__).parents[2] / "src/plap/plugins/core/schema.cue"
+
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,6 +127,49 @@ def test_load_errors_on_package_less_files_when_requested(
 
     with pytest.raises(ValueError, match="package-less"):
         load(tmp_path, package_less=PackageLess.ERROR)
+
+
+def test_core_schema_allows_disabled_plugin_fields_in_model_overlays(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.cue"
+    _write(
+        config_path,
+        """
+package plap
+
+config: #Config & {
+  database_url: "postgresql://localhost/test"
+  api_key_pepper: "pepper"
+  sealing_keys: "key"
+  llm_api_keys: {}
+  display_name: "Test"
+  model_info: {
+    display_name: "Test"
+    description: "Test model"
+    created: 0
+    mode: "chat"
+    input_modalities: ["text"]
+    output_modalities: ["text"]
+    max_input_tokens: 1024
+    max_output_tokens: 1024
+    supported_parameters: []
+    pricing: {
+      input_per_token: 0
+      output_per_token: 0
+    }
+    provider: "test"
+  }
+  overlays: model: "test-model": {
+    main: #FieldConfig & {model: "main-model"}
+    disabled_plugin: #FieldConfig & {model: "disabled-model"}
+  }
+}
+""",
+    )
+
+    loaded = load(config_path, CORE_SCHEMA)
+
+    resolved = loaded.plap.config.resolve(model="test-model")
+    assert resolved.disabled_plugin.model == "disabled-model"
 
 
 def test_resolve_uses_selected_package_runtime(
