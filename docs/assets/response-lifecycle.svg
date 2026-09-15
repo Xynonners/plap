@@ -6,19 +6,19 @@
       <path d="M0 0L8 4L0 8Z" fill="#f0f6fc"/>
     </marker>
     <marker id="accent-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
-      <path d="M0 0L8 4L0 8Z" fill="#c084fc"/>
+      <path d="M0 0L8 4L0 8Z" fill="#86B1CF"/>
     </marker>
     <style>
       .heading { fill: #f0f6fc; font: 750 24px Arial, Helvetica, sans-serif; }
       .track { fill: #f0f6fc; font: 750 13px Arial, Helvetica, sans-serif; letter-spacing: 1.4px; }
       .event { fill: #f0f6fc; font: 700 13px Arial, Helvetica, sans-serif; }
-      .event-accent { fill: #c084fc; font: 700 13px Arial, Helvetica, sans-serif; }
+      .event-accent { fill: #86B1CF; font: 700 13px Arial, Helvetica, sans-serif; }
       .body { fill: #f0f6fc; font: 500 12px Arial, Helvetica, sans-serif; }
       .note { fill: #f0f6fc; font: 650 10px Arial, Helvetica, sans-serif; letter-spacing: 0.8px; }
-      .note-accent { fill: #c084fc; font: 650 10px Arial, Helvetica, sans-serif; letter-spacing: 0.8px; }
+      .note-accent { fill: #86B1CF; font: 650 10px Arial, Helvetica, sans-serif; letter-spacing: 0.8px; }
       .request { fill: #f0f6fc; font: 750 11px Arial, Helvetica, sans-serif; letter-spacing: 1.2px; }
       .core { fill: none; stroke: #f0f6fc; stroke-width: 1.7; stroke-linecap: square; stroke-linejoin: miter; }
-      .plugin { fill: none; stroke: #c084fc; stroke-width: 2.2; stroke-linecap: square; stroke-linejoin: miter; }
+      .plugin { fill: none; stroke: #86B1CF; stroke-width: 2.2; stroke-linecap: square; stroke-linejoin: miter; }
       .guide { fill: none; stroke: #30363d; stroke-width: 1; }
     </style>
   </defs>
@@ -35,7 +35,7 @@
   <text x="460" y="101" text-anchor="middle" class="request">REQUEST</text>
   <path d="M810 120V108H1150V120" class="core"/>
   <text x="980" y="101" text-anchor="middle" class="request">CONTINUATION</text>
-  <path d="M780 98V590" stroke="#c084fc" stroke-width="1.5" stroke-dasharray="5 7"/>
+  <path d="M780 98V590" stroke="#86B1CF" stroke-width="1.5" stroke-dasharray="5 7"/>
   <text x="780" y="610" text-anchor="middle" class="note-accent">REQUEST BOUNDARY</text>
 
   <!-- Track labels and guides -->
@@ -54,7 +54,7 @@
 
   <!-- Server tool loop -->
   <path d="M196 288H326" class="core" marker-end="url(#core-arrow)"/>
-  <rect x="334" y="282" width="12" height="12" fill="#c084fc"/>
+  <rect x="334" y="282" width="12" height="12" fill="#86B1CF"/>
   <text x="340" y="270" text-anchor="middle" class="event-accent">Server tool</text>
   <path d="M346 288C378 288 380 360 414 360H446C472 360 476 320 476 294" class="plugin" marker-end="url(#accent-arrow)"/>
   <circle cx="476" cy="288" r="6" fill="#0d1117" stroke="#f0f6fc" stroke-width="2"/>
@@ -65,32 +65,32 @@
 
   <!-- Advisor holds draft and requests client tool -->
   <path d="M562 294V352C562 390 590 428 620 428" class="plugin" marker-end="url(#accent-arrow)"/>
-  <circle cx="628" cy="428" r="6" fill="#0d1117" stroke="#c084fc" stroke-width="2.5"/>
+  <circle cx="628" cy="428" r="6" fill="#0d1117" stroke="#86B1CF" stroke-width="2.5"/>
   <text x="628" y="456" text-anchor="middle" class="event-accent">Review model</text>
   <path d="M634 428H710" class="plugin" marker-end="url(#accent-arrow)"/>
-  <rect x="718" y="422" width="12" height="12" fill="#c084fc"/>
+  <rect x="718" y="422" width="12" height="12" fill="#86B1CF"/>
   <text x="708" y="402" text-anchor="end" class="event-accent">Client tool call</text>
   <path d="M724 422V174" class="plugin" marker-end="url(#accent-arrow)"/>
-  <circle cx="724" cy="168" r="5" fill="#c084fc"/>
+  <circle cx="724" cy="168" r="5" fill="#86B1CF"/>
   <text x="724" y="148" text-anchor="middle" class="event-accent">Run tool</text>
 
   <!-- Save and restore at request boundary -->
   <path d="M730 428C748 460 750 512 750 552" class="plugin" marker-end="url(#accent-arrow)"/>
-  <circle cx="750" cy="558" r="5" fill="#c084fc"/>
+  <circle cx="750" cy="558" r="5" fill="#86B1CF"/>
   <text x="734" y="540" text-anchor="end" class="event-accent">Save both threads</text>
   <path d="M755 558H838" class="plugin" marker-end="url(#accent-arrow)"/>
-  <circle cx="846" cy="558" r="5" fill="#c084fc"/>
+  <circle cx="846" cy="558" r="5" fill="#86B1CF"/>
   <text x="862" y="540" text-anchor="middle" class="event-accent">Restore both threads</text>
 
   <!-- Client returns tool output -->
   <path d="M724 168H846" class="plugin" marker-end="url(#accent-arrow)"/>
-  <circle cx="854" cy="168" r="5" fill="#c084fc"/>
+  <circle cx="854" cy="168" r="5" fill="#86B1CF"/>
   <text x="854" y="148" text-anchor="middle" class="event-accent">Tool result</text>
   <path d="M854 174V422" class="plugin" marker-end="url(#accent-arrow)"/>
-  <circle cx="854" cy="428" r="6" fill="#0d1117" stroke="#c084fc" stroke-width="2.5"/>
+  <circle cx="854" cy="428" r="6" fill="#0d1117" stroke="#86B1CF" stroke-width="2.5"/>
   <text x="870" y="402" class="event-accent">Append tool result</text>
   <path d="M860 428H930" class="plugin" marker-end="url(#accent-arrow)"/>
-  <circle cx="938" cy="428" r="6" fill="#0d1117" stroke="#c084fc" stroke-width="2.5"/>
+  <circle cx="938" cy="428" r="6" fill="#0d1117" stroke="#86B1CF" stroke-width="2.5"/>
   <text x="938" y="456" text-anchor="middle" class="event-accent">Review model</text>
 
   <!-- Advice returns to main, then final output -->
