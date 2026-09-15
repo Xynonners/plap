@@ -48,6 +48,10 @@ _IMAGE_ID_RE = re.compile(
 )
 
 
+class VisionToolArgumentsError(ValueError):
+    pass
+
+
 def _data_url_bytes(url: str) -> tuple[str, bytes] | None:
     if not url.startswith("data:"):
         return None
@@ -145,15 +149,18 @@ def _normalize_image_ids(value: object) -> list[str] | None:
 
 
 def _tool_args(encoded: str) -> tuple[list[str], str]:
-    arguments = msgspec.json.decode(encoded)
+    try:
+        arguments = msgspec.json.decode(encoded)
+    except msgspec.DecodeError as exc:
+        raise VisionToolArgumentsError("vision tool arguments must be valid JSON") from exc
     if not isinstance(arguments, dict):
-        raise TypeError("vision tool arguments must decode to an object")
+        raise VisionToolArgumentsError("vision tool arguments must decode to an object")
     ids = _normalize_image_ids(arguments.get("ids"))
     prompt = arguments.get("prompt")
     if ids is None:
-        raise RuntimeError("vision tool arguments must include image ids")
+        raise VisionToolArgumentsError("vision tool arguments must include image ids")
     if not isinstance(prompt, str) or not prompt:
-        raise RuntimeError("vision tool arguments must include a non-empty prompt")
+        raise VisionToolArgumentsError("vision tool arguments must include a non-empty prompt")
     return ids, prompt
 
 
@@ -224,6 +231,9 @@ def _vision_context(messages: list[Message]) -> tuple[list[ChatMessage], set[str
         encoded = record.get("arguments")
         if not isinstance(encoded, str):
             continue
+        annotation = message.memory.get(VISION_TOOL_NAME)
+        if isinstance(annotation, Mapping) and annotation.get("reason") == "invalid_arguments":
+            continue
         ids, prompt = _tool_args(encoded)
         transcript.append(ChatMessage(role="user", content=_vision_turn_prompt(ids, prompt)))
         transcript.append(ChatMessage(role="assistant", content=message.content, reasoning_content=_vision_reasoning_content(message)))
@@ -286,7 +296,20 @@ class VisionTool(ServerTool):
         state: State,
         call: ChatToolCall,
     ) -> ChatMessage:
-        ids, prompt = _tool_args(call.arguments)
+        try:
+            ids, prompt = _tool_args(call.arguments)
+        except VisionToolArgumentsError as exc:
+            return ChatMessage(
+                role="tool",
+                tool_call_id=call.id,
+                content=f"Invalid vision tool arguments: {exc}.",
+                memory={
+                    VISION_TOOL_NAME: {
+                        "status": "failed",
+                        "reason": "invalid_arguments",
+                    }
+                },
+            )
         transcript, known_image_ids = _vision_context(state.threads["main"])
         missing = [image_id for image_id in ids if image_id not in known_image_ids]
         if missing:

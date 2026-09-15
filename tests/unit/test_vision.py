@@ -959,6 +959,35 @@ async def test_unknown_image_id_returns_failed_tool_output() -> None:
 
 
 @pytest.mark.anyio
+async def test_invalid_vision_arguments_return_failed_tool_output() -> None:
+    _reload_handlers()
+    image_id = _image_id(_image("https://example.com/cat.png"))
+    client = _Client(
+        streams=[
+            _tool_step(
+                ("call_vision_bad", VISION_TOOL_NAME, '{"ids":[],"prompt":"describe"}'),
+                usage=_usage(input_tokens=8, output_tokens=4),
+            ),
+            _tool_step(
+                ("call_vision", VISION_TOOL_NAME, f'{{"ids":["{image_id}"],"prompt":"describe"}}'),
+                usage=_usage(input_tokens=8, output_tokens=4),
+            ),
+            _text_step("final answer", usage=_usage(input_tokens=5, output_tokens=3)),
+        ],
+        completes=[_complete("vision output", usage=_usage(input_tokens=6, output_tokens=2))],
+    )
+    state, _, _ = _state(client)
+
+    await _run(state)
+
+    failed = next(message for message in client.stream_requests[1].messages if message.tool_call_id == "call_vision_bad")
+    assert failed.memory["vision"] == {"status": "failed", "reason": "invalid_arguments"}
+    assert len(client.complete_requests) == 1
+    final_message = next(item for item in _output_items(state) if isinstance(item, ResponseMessageItem))
+    assert _message_text(final_message) == "final answer"
+
+
+@pytest.mark.anyio
 async def test_multiple_internal_tool_plugins_loop_without_leaking_calls() -> None:
     _reload_handlers()
     easy_server_tools = importlib.import_module("plap.plugins.easy.server_tools")
