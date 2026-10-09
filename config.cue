@@ -14,7 +14,6 @@ config: #Config & {
     gmicloud: "${GMICLOUD_API_KEY}"
     novita: "${NOVITA_API_KEY}"
     fireworks: "${FIREWORKS_API_KEY}"
-    crof: "${CROF_API_KEY}"
     qubrid: "${QUBRID_API_KEY}"
     openrouter: "${OPENROUTER_API_KEY}"
     vercel: "${VERCEL_API_KEY}"
@@ -62,7 +61,7 @@ config: #Config & {
         model_info: created: 1777849810
         model_info: input_modalities: ["text", "image"]
         main: #FieldConfig & {
-          model: *"crof/mimo-v2.5-pro,openrouter/xiaomi/mimo-v2.5-pro:xiaomi,openrouter/xiaomi/mimo-v2.5-pro:novita" | string
+          model: *"openrouter/xiaomi/mimo-v2.5-pro:xiaomi,openrouter/xiaomi/mimo-v2.5-pro:novita" | string
           max_completion_tokens: *131072 | int
           reasoning_effort: *"medium" | #ReasoningEffort
         }
@@ -72,7 +71,7 @@ config: #Config & {
           reasoning_effort: *"low" | #ReasoningEffort
         }
         advisor: #FieldConfig & {
-          model: *"crof/deepseek-v4-pro,openrouter/deepseek/deepseek-v4-pro:deepseek" | string
+          model: *"openrouter/deepseek/deepseek-v4-pro:deepseek" | string
           max_completion_tokens: *131072 | int
           reasoning_effort: *"high" | #ReasoningEffort
         }
@@ -127,7 +126,7 @@ config: #Config & {
         model_info: created: 1783268995
         model_info: input_modalities: ["text", "image"]
         main: #FieldConfig & {
-          model: *"crof/glm-5.3-flash,openrouter/z-ai/glm-5.3-flash:z-ai,openrouter/z-ai/glm-5.3-flash:novita" | string
+          model: *"openrouter/z-ai/glm-5.3-flash:z-ai,openrouter/z-ai/glm-5.3-flash:novita" | string
           max_completion_tokens: *131072 | int
           reasoning_effort: *"high" | #ReasoningEffort
         }
@@ -137,7 +136,7 @@ config: #Config & {
           reasoning_effort: *"low" | #ReasoningEffort
         }
         advisor: #FieldConfig & {
-          model: *"crof/glm-5.3-flash,openrouter/z-ai/glm-5.3-flash:z-ai,openrouter/z-ai/glm-5.3-flash:novita" | string
+          model: *"openrouter/z-ai/glm-5.3-flash:z-ai,openrouter/z-ai/glm-5.3-flash:novita" | string
           max_completion_tokens: *131072 | int
           reasoning_effort: *"high" | #ReasoningEffort
         }

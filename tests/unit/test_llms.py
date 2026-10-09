@@ -52,7 +52,6 @@ from plap.llms.completions.errors import (
 )
 from plap.llms.completions.providers import (
     CEREBRAS_OPENAI_BASE_URL,
-    CROF_OPENAI_BASE_URL,
     GMICLOUD_OPENAI_BASE_URL,
     GROQ_OPENAI_BASE_URL,
     LIGHTNING_OPENAI_BASE_URL,
@@ -63,7 +62,6 @@ from plap.llms.completions.providers import (
     OpenRouterProvider,
     VercelProvider,
     build_cerebras_provider,
-    build_crof_provider,
     build_fireworks_provider,
     build_gmicloud_provider,
     build_groq_provider,
@@ -2008,13 +2006,6 @@ def _novita_provider(*, client: Any | None = None) -> OpenAIProvider:
     return provider
 
 
-def _crof_provider(*, client: Any | None = None) -> OpenAIProvider:
-    provider = build_crof_provider(api_key="crof-key")
-    if client is not None:
-        provider._client = client
-    return provider
-
-
 def _qubrid_provider(*, client: Any | None = None) -> OpenAIProvider:
     provider = build_qubrid_provider(api_key="qubrid-key")
     if client is not None:
@@ -2753,25 +2744,6 @@ def test_novita_request_quirks_map_forced_tool_choice() -> None:
     assert "extra_body" not in body
 
 
-def test_crof_request_quirks_map_max_tokens_for_flash_model() -> None:
-    request = replace(_request_for_model("glm-4.7-flash"), reasoning_effort="none", response_format=None)
-
-    body = _body_for(_crof_provider(), request, stream=False)
-
-    assert body["messages"][0] == {"role": "developer", "content": "be precise"}
-    assert body["max_tokens"] == 128
-    assert "max_completion_tokens" not in body
-    assert "extra_body" not in body
-
-
-@pytest.mark.parametrize("model", ["deepseek-v4-flash-0731", "deepseek-v4-pro-0813"])
-def test_crof_supports_deepseek_ga_models_with_existing_response_format_limits(model: str) -> None:
-    request = _request_for_model(model)
-
-    with pytest.raises(ChatCompletionUnsupportedRequestError, match="when type is 'json_schema'"):
-        _body_for(_crof_provider(), request, stream=False)
-
-
 @pytest.mark.parametrize(
     "model",
     ["deepseek/deepseek-v4-flash-0731", "deepseek/deepseek-v4-pro-0813"],
@@ -3405,21 +3377,6 @@ async def test_lightning_gpt_oss_120b_stream_rejects_response_format() -> None:
     assert fake_client.chat.completions.calls == []
 
 
-async def test_crof_glm_4_7_flash_rejects_response_format() -> None:
-    fake_client = _FakeOpenAIClient([], base_url=CROF_OPENAI_BASE_URL)
-    client = ChatCompletionClient(_crof_provider(client=fake_client))
-    request = ChatCompletionRequest(
-        model="glm-4.7-flash",
-        messages=[ChatMessage(role="user", content="hello")],
-        response_format=ChatResponseFormat(type="json_object"),
-    )
-
-    with pytest.raises(ChatCompletionUnsupportedRequestError, match="response_format is not supported"):
-        await client.complete(request)
-
-    assert fake_client.chat.completions.calls == []
-
-
 async def test_fireworks_provider_uses_its_own_sdk_and_shared_parser() -> None:
     fake_client = _FakeFireworksClient(
         complete_result=_completion_response(model="accounts/fireworks/models/gpt-oss-20b", content="ok"),
@@ -3540,14 +3497,14 @@ async def test_router_complete_retries_transient_errors_before_fallback(monkeypa
     fallback = _StubChatClient(complete_result=_completion_result("gmicloud/XiaomiMiMo/MiMo-V2.5-Pro", "ok"))
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=primary),
+            ModelRoute(prefix="primary/", client=primary),
             ModelRoute(prefix="gmicloud/", client=fallback),
         ]
     )
 
     result = await router.complete(
         ChatCompletionRequest(
-            model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+            model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
             messages=[ChatMessage(role="user", content="hello")],
         )
     )
@@ -3573,7 +3530,7 @@ async def test_router_complete_skips_multiple_unavailable_routes(monkeypatch: py
 
     result = await router.complete(
         ChatCompletionRequest(
-            model="crof/qwen3.5-9b,novita/deepseek/deepseek-v3.2,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+            model="primary/qwen3.5-9b,novita/deepseek/deepseek-v3.2,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
             messages=[ChatMessage(role="user", content="hello")],
         )
     )
@@ -3595,7 +3552,7 @@ async def test_router_complete_reports_when_every_route_is_unavailable(monkeypat
     with pytest.raises(ChatCompletionUnsupportedRequestError, match="No chat completion route configured for model 'novita/model-b'"):
         await router.complete(
             ChatCompletionRequest(
-                model="crof/model-a,novita/model-b",
+                model="primary/model-a,novita/model-b",
                 messages=[ChatMessage(role="user", content="hello")],
             )
         )
@@ -3611,7 +3568,7 @@ async def test_router_aclose_closes_shared_child_once() -> None:
     shared = _StubChatClient()
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=shared),
+            ModelRoute(prefix="primary/", client=shared),
             ModelRoute(prefix="gmicloud/", client=shared),
         ]
     )
@@ -3626,7 +3583,7 @@ async def test_router_aclose_closes_distinct_children_even_same_class() -> None:
     second = _StubChatClient()
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=first),
+            ModelRoute(prefix="primary/", client=first),
             ModelRoute(prefix="gmicloud/", client=second),
         ]
     )
@@ -3643,14 +3600,14 @@ async def test_router_complete_does_not_retry_current_attempt_for_invalid_reques
     fallback = _StubChatClient(complete_result=_completion_result("gmicloud/XiaomiMiMo/MiMo-V2.5-Pro", "ok"))
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=primary),
+            ModelRoute(prefix="primary/", client=primary),
             ModelRoute(prefix="gmicloud/", client=fallback),
         ]
     )
 
     result = await router.complete(
         ChatCompletionRequest(
-            model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+            model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
             messages=[ChatMessage(role="user", content="hello")],
         )
     )
@@ -3670,14 +3627,14 @@ async def test_router_complete_falls_back_immediately_for_rate_limit(monkeypatch
     fallback = _StubChatClient(complete_result=_completion_result("gmicloud/XiaomiMiMo/MiMo-V2.5-Pro", "ok"))
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=primary),
+            ModelRoute(prefix="primary/", client=primary),
             ModelRoute(prefix="gmicloud/", client=fallback),
         ]
     )
 
     result = await router.complete(
         ChatCompletionRequest(
-            model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+            model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
             messages=[ChatMessage(role="user", content="hello")],
         )
     )
@@ -3703,7 +3660,7 @@ async def test_router_stream_retries_transient_errors_before_fallback(monkeypatc
     )
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=primary),
+            ModelRoute(prefix="primary/", client=primary),
             ModelRoute(prefix="gmicloud/", client=fallback),
         ]
     )
@@ -3712,7 +3669,7 @@ async def test_router_stream_retries_transient_errors_before_fallback(monkeypatc
         delta
         async for delta in router.stream(
             ChatCompletionRequest(
-                model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+                model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
                 messages=[ChatMessage(role="user", content="hello")],
             )
         )
@@ -3746,7 +3703,7 @@ async def test_router_stream_skips_an_unavailable_route(monkeypatch: pytest.Monk
         delta
         async for delta in router.stream(
             ChatCompletionRequest(
-                model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+                model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
                 messages=[ChatMessage(role="user", content="hello")],
             )
         )
@@ -3770,7 +3727,7 @@ async def test_router_stream_reports_when_every_route_is_unavailable(monkeypatch
             delta
             async for delta in router.stream(
                 ChatCompletionRequest(
-                    model="crof/model-a,novita/model-b",
+                    model="primary/model-a,novita/model-b",
                     messages=[ChatMessage(role="user", content="hello")],
                 )
             )
@@ -3787,7 +3744,7 @@ async def test_router_stream_does_not_fallback_after_first_delta(monkeypatch: py
     events = _capture_router_logs(monkeypatch)
     primary = _StubChatClient(
         stream_result=[
-            _delta("crof/qwen3.5-9b", content_delta="first"),
+            _delta("primary/qwen3.5-9b", content_delta="first"),
             ChatCompletionProviderError("boom"),
         ]
     )
@@ -3799,7 +3756,7 @@ async def test_router_stream_does_not_fallback_after_first_delta(monkeypatch: py
     )
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=primary),
+            ModelRoute(prefix="primary/", client=primary),
             ModelRoute(prefix="gmicloud/", client=fallback),
         ]
     )
@@ -3809,7 +3766,7 @@ async def test_router_stream_does_not_fallback_after_first_delta(monkeypatch: py
             delta
             async for delta in router.stream(
                 ChatCompletionRequest(
-                    model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+                    model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
                     messages=[ChatMessage(role="user", content="hello")],
                 )
             )
@@ -3824,7 +3781,7 @@ async def test_router_stream_falls_back_after_empty_first_delta(monkeypatch: pyt
     delays = _capture_router_retry_sleeps(monkeypatch)
     primary = _StubChatClient(
         stream_result=[
-            _delta("crof/qwen3.5-9b"),
+            _delta("primary/qwen3.5-9b"),
             ChatCompletionProviderError("boom"),
         ]
     )
@@ -3836,7 +3793,7 @@ async def test_router_stream_falls_back_after_empty_first_delta(monkeypatch: pyt
     )
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=primary),
+            ModelRoute(prefix="primary/", client=primary),
             ModelRoute(prefix="gmicloud/", client=fallback),
         ]
     )
@@ -3845,7 +3802,7 @@ async def test_router_stream_falls_back_after_empty_first_delta(monkeypatch: pyt
         delta
         async for delta in router.stream(
             ChatCompletionRequest(
-                model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+                model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
                 messages=[ChatMessage(role="user", content="hello")],
             )
         )
@@ -3868,8 +3825,8 @@ async def test_router_stream_falls_back_after_finish_only_empty_stream(monkeypat
     delays = _capture_router_retry_sleeps(monkeypatch)
     primary = _StubChatClient(
         stream_result=[
-            _delta("crof/qwen3.5-9b"),
-            _delta("crof/qwen3.5-9b", finish_reason="stop"),
+            _delta("primary/qwen3.5-9b"),
+            _delta("primary/qwen3.5-9b", finish_reason="stop"),
         ]
     )
     fallback = _StubChatClient(
@@ -3880,7 +3837,7 @@ async def test_router_stream_falls_back_after_finish_only_empty_stream(monkeypat
     )
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=primary),
+            ModelRoute(prefix="primary/", client=primary),
             ModelRoute(prefix="gmicloud/", client=fallback),
         ]
     )
@@ -3889,7 +3846,7 @@ async def test_router_stream_falls_back_after_finish_only_empty_stream(monkeypat
         delta
         async for delta in router.stream(
             ChatCompletionRequest(
-                model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+                model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
                 messages=[ChatMessage(role="user", content="hello")],
             )
         )
@@ -3909,7 +3866,7 @@ async def test_router_stream_does_not_fallback_after_reasoning_delta(monkeypatch
     events = _capture_router_logs(monkeypatch)
     primary = _StubChatClient(
         stream_result=[
-            _delta("crof/qwen3.5-9b", reasoning_delta="because"),
+            _delta("primary/qwen3.5-9b", reasoning_delta="because"),
             ChatCompletionProviderError("boom"),
         ]
     )
@@ -3921,7 +3878,7 @@ async def test_router_stream_does_not_fallback_after_reasoning_delta(monkeypatch
     )
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=primary),
+            ModelRoute(prefix="primary/", client=primary),
             ModelRoute(prefix="gmicloud/", client=fallback),
         ]
     )
@@ -3931,7 +3888,7 @@ async def test_router_stream_does_not_fallback_after_reasoning_delta(monkeypatch
             delta
             async for delta in router.stream(
                 ChatCompletionRequest(
-                    model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+                    model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
                     messages=[ChatMessage(role="user", content="hello")],
                 )
             )
@@ -3974,7 +3931,7 @@ async def test_router_stream_times_out_between_deltas_without_fallback(monkeypat
     )
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=primary),
+            ModelRoute(prefix="primary/", client=primary),
             ModelRoute(prefix="gmicloud/", client=fallback),
         ]
     )
@@ -3984,7 +3941,7 @@ async def test_router_stream_times_out_between_deltas_without_fallback(monkeypat
             delta
             async for delta in router.stream(
                 ChatCompletionRequest(
-                    model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+                    model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
                     messages=[ChatMessage(role="user", content="hello")],
                 )
             )
@@ -4027,7 +3984,7 @@ async def test_router_stream_falls_back_after_first_delta_timeout(monkeypatch: p
     )
     router = RoutingChatCompletionClient(
         [
-            ModelRoute(prefix="crof/", client=primary),
+            ModelRoute(prefix="primary/", client=primary),
             ModelRoute(prefix="gmicloud/", client=fallback),
         ],
         stream_first_delta_timeout_seconds=0.01,
@@ -4037,7 +3994,7 @@ async def test_router_stream_falls_back_after_first_delta_timeout(monkeypatch: p
         delta
         async for delta in router.stream(
             ChatCompletionRequest(
-                model="crof/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
+                model="primary/qwen3.5-9b,gmicloud/XiaomiMiMo/MiMo-V2.5-Pro",
                 messages=[ChatMessage(role="user", content="hello")],
             )
         )

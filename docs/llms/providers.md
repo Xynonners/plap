@@ -21,7 +21,6 @@ Provider builders are available from `plap.llms.completions.providers`:
 | `build_lightning_provider` | Lightning AI |
 | `build_gmicloud_provider` | GMI Cloud |
 | `build_novita_provider` | Novita AI |
-| `build_crof_provider` | CROF |
 | `build_qubrid_provider` | Qubrid AI |
 | `build_wandb_provider` | Weights & Biases Inference |
 

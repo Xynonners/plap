@@ -48,7 +48,6 @@ The following providers reject file reference fields on request shaping:
 - Groq
 - GMICloud
 - Novita
-- Crof
 - Qubrid
 - Fireworks
 - Vercel AI Gateway

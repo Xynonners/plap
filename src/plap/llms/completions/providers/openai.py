@@ -183,7 +183,6 @@ GROQ_OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
 CEREBRAS_OPENAI_BASE_URL = "https://api.cerebras.ai/v1"
 GMICLOUD_OPENAI_BASE_URL = "https://api.gmi-serving.com/v1"
 NOVITA_OPENAI_BASE_URL = "https://api.novita.ai/openai"
-CROF_OPENAI_BASE_URL = "https://crof.ai/v1"
 QUBRID_OPENAI_BASE_URL = "https://platform.qubrid.com/v1"
 WANDB_OPENAI_BASE_URL = "https://api.inference.wandb.ai/v1"
 
@@ -289,26 +288,6 @@ GMICLOUD_FIELDS = (
     "temperature",
     "top_p",
     "top_k",
-    "frequency_penalty",
-    "presence_penalty",
-    "logit_bias",
-    "stop",
-    "seed",
-    "n",
-    "reasoning_effort",
-)
-CROF_FIELDS = (
-    "model",
-    "messages",
-    "stream",
-    "stream_options",
-    "tools",
-    "tool_choice",
-    "parallel_tool_calls",
-    "response_format",
-    "max_completion_tokens",
-    "temperature",
-    "top_p",
     "frequency_penalty",
     "presence_penalty",
     "logit_bias",
@@ -426,30 +405,6 @@ GMICLOUD_MODELS: dict[str, tuple[Quirk, ...]] = {
     "openai/gpt-oss-20b": (RejectIf("reasoning_effort", "none"),),
     "openai/gpt-oss-120b": (RejectIf("reasoning_effort", "none"),),
 }
-CROF_MODELS: dict[str, tuple[Quirk, ...]] = {
-    "deepseek-v4-flash": (RejectResponseFormat("json_schema"),),
-    "deepseek-v4-flash-0731": (RejectResponseFormat("json_schema"),),
-    "deepseek-v4-pro": (RejectResponseFormat("json_schema"),),
-    "deepseek-v4-pro-0813": (RejectResponseFormat("json_schema"),),
-    "deepseek-v3.2": (RejectResponseFormat(),),
-    "gemma-4-31b-it": (RejectResponseFormat(),),
-    "greg": (RejectResponseFormat("json_object"),),
-    "glm-4.7": (RejectResponseFormat(),),
-    "glm-4.7-flash": (RejectResponseFormat(),),
-    "glm-5": (RejectResponseFormat(),),
-    "glm-5.1": (RejectResponseFormat("json_schema"),),
-    "glm-5.2": (RejectResponseFormat("json_schema"),),
-    "glm-5.3": (RejectResponseFormat("json_schema"),),
-    "glm-5.3-flash": (RejectResponseFormat("json_schema"),),
-    "kimi-k2.5": (RejectResponseFormat(),),
-    "kimi-k2.5-lightning": (),
-    "kimi-k2.6": (RejectResponseFormat("json_schema"),),
-    "minimax-m2.5": (RejectResponseFormat(),),
-    "mimo-v2.5-pro": (RejectResponseFormat("json_schema"),),
-    "qwen3.6-27b": (RejectResponseFormat(),),
-    "qwen3.5-397b-a17b": (RejectResponseFormat(),),
-    "qwen3.5-9b": (),
-}
 QUBRID_MODELS: dict[str, tuple[Quirk, ...]] = {
     "deepseek-ai/DeepSeek-V4-Flash": (ForceRequiredToolChoice(),),
     "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8": (
@@ -556,21 +511,6 @@ def build_novita_provider(*, api_key: str) -> Provider:
     )
 
 
-def build_crof_provider(*, api_key: str) -> Provider:
-    return OpenAIProvider(
-        name="crof",
-        api_key=api_key,
-        base_url=CROF_OPENAI_BASE_URL,
-        quirks=(
-            Only(*CROF_FIELDS),
-            RejectMessageField(("file", "file_id"), content_type="file"),
-            RejectMessageField(("file", "file_url"), content_type="file"),
-            Move("max_completion_tokens", "max_tokens"),
-        ),
-        models=CROF_MODELS,
-    )
-
-
 def build_qubrid_provider(*, api_key: str) -> Provider:
     return OpenAIProvider(
         name="qubrid",
@@ -605,7 +545,6 @@ def build_wandb_provider(*, api_key: str) -> Provider:
 
 __all__ = [
     "CEREBRAS_OPENAI_BASE_URL",
-    "CROF_OPENAI_BASE_URL",
     "GMICLOUD_OPENAI_BASE_URL",
     "GROQ_OPENAI_BASE_URL",
     "LIGHTNING_OPENAI_BASE_URL",
@@ -615,7 +554,6 @@ __all__ = [
     "WANDB_OPENAI_BASE_URL",
     "OpenAIProvider",
     "build_cerebras_provider",
-    "build_crof_provider",
     "build_gmicloud_provider",
     "build_groq_provider",
     "build_lightning_provider",

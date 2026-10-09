@@ -6,7 +6,6 @@ from plap.llms.completions.client import Provider
 from plap.llms.completions.providers.fireworks import build_fireworks_provider
 from plap.llms.completions.providers.openai import (
     CEREBRAS_OPENAI_BASE_URL,
-    CROF_OPENAI_BASE_URL,
     GMICLOUD_OPENAI_BASE_URL,
     GROQ_OPENAI_BASE_URL,
     LIGHTNING_OPENAI_BASE_URL,
@@ -14,7 +13,6 @@ from plap.llms.completions.providers.openai import (
     QUBRID_OPENAI_BASE_URL,
     WANDB_OPENAI_BASE_URL,
     build_cerebras_provider,
-    build_crof_provider,
     build_gmicloud_provider,
     build_groq_provider,
     build_lightning_provider,
@@ -43,7 +41,6 @@ PROVIDER_BUILDERS: dict[str, ProviderBuilder] = {
     "gmicloud": build_gmicloud_provider,
     "novita": build_novita_provider,
     "fireworks": build_fireworks_provider,
-    "crof": build_crof_provider,
     "qubrid": build_qubrid_provider,
     "wandb": build_wandb_provider,
     "openrouter": build_openrouter_provider,
@@ -64,7 +61,6 @@ def build_providers(settings) -> dict[str, Provider]:
 
 __all__ = [
     "CEREBRAS_OPENAI_BASE_URL",
-    "CROF_OPENAI_BASE_URL",
     "GMICLOUD_OPENAI_BASE_URL",
     "GROQ_OPENAI_BASE_URL",
     "LIGHTNING_OPENAI_BASE_URL",
@@ -77,7 +73,6 @@ __all__ = [
     "OpenRouterProvider",
     "VercelProvider",
     "build_cerebras_provider",
-    "build_crof_provider",
     "build_fireworks_provider",
     "build_gmicloud_provider",
     "build_groq_provider",

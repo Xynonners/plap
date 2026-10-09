@@ -51,9 +51,9 @@ from plap.llms.retry import complete as retry_complete  # noqa: E402
 DEFAULT_DATABASE = REPO_ROOT / "archive" / "deepswe.duckdb"
 DEFAULT_ENV_FILE = REPO_ROOT / ".env"
 DEFAULT_RUN_DIR = REPO_ROOT / ".dev" / "mimo-gepa"
-DEFAULT_TASK_MODEL = "crof/mimo-v2.5-pro,crof/mimo-v2.5-pro"
-DEFAULT_JUDGE_MODEL = "crof/deepseek-v4-pro,crof/deepseek-v4-pro"
-DEFAULT_REFLECTION_MODEL = "crof/deepseek-v4-pro,crof/deepseek-v4-pro"
+DEFAULT_TASK_MODEL = "openrouter/xiaomi/mimo-v2.5-pro:xiaomi,openrouter/xiaomi/mimo-v2.5-pro:novita"
+DEFAULT_JUDGE_MODEL = "openrouter/deepseek/deepseek-v4-pro:deepseek"
+DEFAULT_REFLECTION_MODEL = "openrouter/deepseek/deepseek-v4-pro:deepseek"
 DEFAULT_CODEX_LB_BASE_URL = "http://127.0.0.1:2455/v1"
 DEFAULT_TEST_TASK_COUNT = 15
 DEFAULT_MAX_STAGES = 4

@@ -24,7 +24,6 @@ from plap.llms.completions.client import ChatCompletionClient
 from plap.llms.completions.errors import ChatCompletionProviderError
 from plap.llms.completions.providers import (
     build_cerebras_provider,
-    build_crof_provider,
     build_fireworks_provider,
     build_gmicloud_provider,
     build_groq_provider,
@@ -114,12 +113,6 @@ def _fireworks_client(api_key: str) -> IChatCompletionClient:
     )
 
 
-def _crof_client(api_key: str) -> IChatCompletionClient:
-    provider = build_crof_provider(api_key=api_key)
-    assert provider is not None
-    return RoutingChatCompletionClient([ModelRoute(prefix="crof/", client=ChatCompletionClient(provider))])
-
-
 LIGHTNING_GPT_OSS_20B_MODEL = "lightning/lightning-ai/gpt-oss-20b"
 LIGHTNING_GPT_OSS_120B_MODEL = "lightning/lightning-ai/gpt-oss-120b"
 CEREBRAS_GPT_OSS_120B_MODEL = "cerebras/gpt-oss-120b"
@@ -129,7 +122,6 @@ GROQ_GPT_OSS_120B_MODEL = "groq/openai/gpt-oss-120b"
 NOVITA_GPT_OSS_120B_MODEL = "novita/openai/gpt-oss-120b"
 GMICLOUD_MIMO_V25_PRO_MODEL = "gmicloud/XiaomiMiMo/MiMo-V2.5-Pro"
 FIREWORKS_GPT_OSS_20B_MODEL = "fireworks/accounts/fireworks/models/gpt-oss-20b"
-CROF_QWEN_3_5_9B_MODEL = "crof/qwen3.5-9b"
 DEFAULT_REASONING_EFFORT: ReasoningEffort = "low"
 _UNAVAILABLE_PROVIDER_REASONS: dict[str, str] = {}
 
@@ -230,22 +222,6 @@ TOOL_PROVIDERS = (
         id="gmicloud-mimo-v2.5-pro",
     ),
     GPT_OSS_PROVIDERS[2],
-    pytest.param(
-        ProviderCase(
-            name="crof",
-            api_key_env="CROF_API_KEY",
-            model=CROF_QWEN_3_5_9B_MODEL,
-            client_factory=_crof_client,
-        ),
-        id="crof-qwen3.5-9b",
-    ),
-)
-
-CROF_PROVIDER = ProviderCase(
-    name="crof",
-    api_key_env="CROF_API_KEY",
-    model=CROF_QWEN_3_5_9B_MODEL,
-    client_factory=_crof_client,
 )
 
 
@@ -516,94 +492,6 @@ async def test_live_gmicloud_mimo_none_reasoning_effort_request() -> None:
     )
 
     assert _message_has_output(result.message)
-
-
-async def test_live_crof_qwen_3_5_9b_basic_completion() -> None:
-    result = await _complete(
-        CROF_PROVIDER,
-        ChatCompletionRequest(
-            model=CROF_PROVIDER.model,
-            messages=[ChatMessage(role="user", content="Reply with exactly: pong")],
-            max_completion_tokens=256,
-            temperature=0,
-        ),
-    )
-
-    assert (result.message.content or "").strip()
-
-
-async def test_live_crof_qwen_3_5_9b_stream() -> None:
-    deltas = await _stream(
-        CROF_PROVIDER,
-        ChatCompletionRequest(
-            model=CROF_PROVIDER.model,
-            messages=[ChatMessage(role="user", content="Reply with exactly: pong")],
-            max_completion_tokens=256,
-            stream_options=ChatStreamOptions(include_usage=True),
-            temperature=0,
-        ),
-    )
-
-    assert any((delta.content_delta or "").strip() for delta in deltas)
-    assert any(delta.usage is not None for delta in deltas)
-
-
-@pytest.mark.parametrize(
-    "response_format",
-    [
-        pytest.param(ChatResponseFormat(type="json_object"), id="json-object"),
-        pytest.param(
-            ChatResponseFormat(
-                type="json_schema",
-                name="ok_response",
-                schema={
-                    "type": "object",
-                    "properties": {"ok": {"type": "boolean"}},
-                    "required": ["ok"],
-                    "additionalProperties": False,
-                },
-                strict=True,
-            ),
-            id="json-schema",
-        ),
-    ],
-)
-async def test_live_crof_qwen_3_5_9b_response_format(
-    response_format: ChatResponseFormat,
-) -> None:
-    result = await _complete(
-        CROF_PROVIDER,
-        ChatCompletionRequest(
-            model=CROF_PROVIDER.model,
-            messages=[ChatMessage(role="user", content='Return exactly {"ok": true}.')],
-            response_format=response_format,
-            max_completion_tokens=512,
-            temperature=0,
-        ),
-    )
-
-    parsed = json.loads(result.message.content or "")
-    assert parsed == {"ok": True}
-
-
-async def test_live_crof_qwen_3_5_9b_reasoning_request() -> None:
-    result = await _complete(
-        CROF_PROVIDER,
-        ChatCompletionRequest(
-            model=CROF_PROVIDER.model,
-            messages=[
-                ChatMessage(
-                    role="user",
-                    content="Think through 17 + 25. Keep the final answer short.",
-                )
-            ],
-            reasoning_effort="low",
-            max_completion_tokens=256,
-            temperature=0,
-        ),
-    )
-
-    assert result.message.reasoning_content
 
 
 def _client(provider: ProviderCase) -> IChatCompletionClient:

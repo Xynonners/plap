@@ -55,7 +55,7 @@ def test_measure_prompt_tokens_uses_model_visible_surface(monkeypatch) -> None:
                 memory={"advisor": {"call_id": "call_1"}},
             )
         ],
-        tokenizer_config=_tokenizer_config(model="crof/qwen3.5-9b"),
+        tokenizer_config=_tokenizer_config(model="test/qwen3.5-9b"),
     )
 
     assert len(captured_payloads) == 1
@@ -154,7 +154,7 @@ def test_measure_request_tokens_uses_hf_chat_template_when_available(monkeypatch
 
     count = measure_request_tokens(
         ChatCompletionRequest(
-            model="crof/qwen3.5-9b",
+            model="test/qwen3.5-9b",
             messages=[
                 ChatMessage(role="developer", content="system prompt"),
                 ChatMessage(
@@ -175,7 +175,7 @@ def test_measure_request_tokens_uses_hf_chat_template_when_available(monkeypatch
                 )
             ],
         ),
-        tokenizer_config=_tokenizer_config(model="crof/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
+        tokenizer_config=_tokenizer_config(model="test/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
     )
 
     assert count == 5
@@ -224,7 +224,7 @@ def test_measure_request_tokens_uses_native_template_for_structured_content_when
 
     count = measure_request_tokens(
         ChatCompletionRequest(
-            model="crof/qwen3.5-9b",
+            model="test/qwen3.5-9b",
             messages=[
                 ChatMessage(
                     role="user",
@@ -241,7 +241,7 @@ def test_measure_request_tokens_uses_native_template_for_structured_content_when
                 )
             ],
         ),
-        tokenizer_config=_tokenizer_config(model="crof/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
+        tokenizer_config=_tokenizer_config(model="test/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
     )
 
     assert count == 3
@@ -285,7 +285,7 @@ def test_measure_request_tokens_lowers_developer_multimodal_content_before_templ
 
     count = measure_request_tokens(
         ChatCompletionRequest(
-            model="crof/qwen3.5-9b",
+            model="test/qwen3.5-9b",
             messages=[
                 ChatMessage(
                     role="developer",
@@ -298,7 +298,7 @@ def test_measure_request_tokens_lowers_developer_multimodal_content_before_templ
                 )
             ],
         ),
-        tokenizer_config=_tokenizer_config(model="crof/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
+        tokenizer_config=_tokenizer_config(model="test/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
     )
 
     assert count == 3
@@ -343,7 +343,7 @@ def test_measure_request_tokens_retries_template_with_projected_structured_conte
 
     count = measure_request_tokens(
         ChatCompletionRequest(
-            model="crof/qwen3.5-9b",
+            model="test/qwen3.5-9b",
             messages=[
                 ChatMessage(
                     role="user",
@@ -367,7 +367,7 @@ def test_measure_request_tokens_retries_template_with_projected_structured_conte
                 )
             ],
         ),
-        tokenizer_config=_tokenizer_config(model="crof/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
+        tokenizer_config=_tokenizer_config(model="test/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
     )
 
     assert count == 2
@@ -409,7 +409,7 @@ def test_measure_request_tokens_falls_back_to_json_when_projected_template_still
 
     count = measure_request_tokens(
         ChatCompletionRequest(
-            model="crof/qwen3.5-9b",
+            model="test/qwen3.5-9b",
             messages=[
                 ChatMessage(
                     role="user",
@@ -420,7 +420,7 @@ def test_measure_request_tokens_falls_back_to_json_when_projected_template_still
                 )
             ],
         ),
-        tokenizer_config=_tokenizer_config(model="crof/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
+        tokenizer_config=_tokenizer_config(model="test/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
     )
 
     assert count == len(captured_payloads[0])
@@ -465,14 +465,14 @@ def test_measure_request_tokens_keeps_invalid_template_tool_arguments_raw(monkey
 
     count = measure_request_tokens(
         ChatCompletionRequest(
-            model="crof/qwen3.5-9b",
+            model="test/qwen3.5-9b",
             messages=[
                 ChatMessage(
                     role="assistant", content="answer", tool_calls=[ChatToolCall(id="call_1", name="search", arguments="{'query':'cats'}")]
                 )
             ],
         ),
-        tokenizer_config=_tokenizer_config(model="crof/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
+        tokenizer_config=_tokenizer_config(model="test/qwen3.5-9b", tokenizer_hf_repo="fake/repo"),
     )
 
     assert count == 1
@@ -685,7 +685,7 @@ def test_measure_prompt_tokens_keeps_invalid_fallback_tool_arguments_raw(monkeyp
                 tool_calls=[ChatToolCall(id="tool_call_1", name="search", arguments="{'b':2,'a':1}")],
             )
         ],
-        tokenizer_config=_tokenizer_config(model="crof/qwen3.5-9b"),
+        tokenizer_config=_tokenizer_config(model="test/qwen3.5-9b"),
     )
 
     assert len(captured_payloads) == 1
